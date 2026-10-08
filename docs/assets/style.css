@@ -233,10 +233,7 @@ h1.display {
 }
 
 h1.display .accent {
-  background: linear-gradient(100deg, var(--accent-1), var(--accent-2) 55%, var(--accent-3));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent-1);
 }
 
 .sub {
