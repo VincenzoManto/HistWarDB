@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <clipPath id="leftHalf">
+      <rect x="0" y="0" width="32" height="64"/>
+    </clipPath>
+    <clipPath id="rightHalf">
+      <rect x="32" y="0" width="32" height="64"/>
+    </clipPath>
+    <clipPath id="rounded">
+      <rect width="64" height="64" rx="14"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#rounded)">
+    <rect x="0" y="0" width="32" height="64" fill="#0b0b12"/>
+    <rect x="32" y="0" width="32" height="64" fill="#ffffff"/>
+
+    <text x="32" y="41" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+          font-weight="800" font-size="19" letter-spacing="-0.5" fill="#ffffff" clip-path="url(#leftHalf)">HWD</text>
+    <text x="32" y="41" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+          font-weight="800" font-size="19" letter-spacing="-0.5" fill="#0b0b12" clip-path="url(#rightHalf)">HWD</text>
+  </g>
+</svg>

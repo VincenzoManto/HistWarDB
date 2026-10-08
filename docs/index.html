@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HistWarDB — Historical & Sovereign War Dataset from Wikidata</title>
+<meta name="description" content="HistWarDB is an open-source Python toolkit that extracts, cleans, and analyzes global warfare data from Wikidata (1700–present). Dynamic SPARQL pipeline, anti-noise filtering, historical-state support, and interactive visualizations for researchers and data scientists." />
+<meta name="keywords" content="HistWarDB, Wikidata, war dataset, conflict data, historical data, political science, SPARQL, open data, academic dataset, Python toolkit" />
+<meta name="author" content="Vincenzo Manto, Riccardo Dal Cero" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://vincenzomanto.github.io/HistWarDB/" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="HistWarDB" />
+<meta property="og:title" content="HistWarDB — Historical & Sovereign War Dataset from Wikidata" />
+<meta property="og:description" content="Dynamic SPARQL pipeline, anti-noise filtering, and interactive visualizations for global warfare data spanning 1700 to the present." />
+<meta property="og:url" content="https://vincenzomanto.github.io/HistWarDB/" />
+<meta property="og:image" content="https://vincenzomanto.github.io/HistWarDB/assets/og-image.svg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="HistWarDB — Historical & Sovereign War Dataset from Wikidata" />
+<meta name="twitter:description" content="Open-source Python toolkit for extracting and analyzing global warfare data from Wikidata (1700–present)." />
+<meta name="twitter:image" content="https://vincenzomanto.github.io/HistWarDB/assets/og-image.svg" />
+
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/style.css" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "HistWarDB",
+  "alternateName": "HistoricalWarDB",
+  "description": "A dynamic, programmatic Python toolkit that extracts, cleans, and analyzes global warfare data from Wikidata spanning from 1700 to the present, supporting both modern sovereign states and historical empires.",
+  "url": "https://vincenzomanto.github.io/HistWarDB/",
+  "codeRepository": "https://github.com/VincenzoManto/histwardb",
+  "programmingLanguage": "Python",
+  "license": "https://opensource.org/licenses/MIT",
+  "keywords": "wikidata, conflict-data, historical-data, political-science, war, open-data",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Vincenzo Manto",
+      "sameAs": "https://orcid.org/0009-0007-0065-4847"
+    },
+    {
+      "@type": "Person",
+      "name": "Riccardo Dal Cero",
+      "sameAs": "https://orcid.org/0009-0003-1308-0230"
+    }
+  ],
+  "dateModified": "2026-10-08"
+}
+</script>
+</head>
+<body>
+
+<div class="fx-grid" aria-hidden="true"></div>
+<div class="fx-blobs" aria-hidden="true">
+  <span class="b1"></span>
+  <span class="b2"></span>
+  <span class="b3"></span>
+</div>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top">
+      <img src="assets/favicon.svg" alt="" width="28" height="28" />
+      HistWarDB
+    </a>
+    <nav class="links">
+      <a href="#features">Features</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="#views">Views</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#citation">Citation</a>
+    </nav>
+    <a class="nav-cta" href="https://github.com/VincenzoManto/histwardb" rel="noopener">
+      ★ GitHub
+    </a>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero wrap">
+    <span class="kicker"><span class="dot"></span> 1700 → 2026 · live Wikidata pipeline</span>
+    <h1 class="display">A dataset of<br><span class="accent">every sovereign war.</span></h1>
+    <p class="sub">
+      HistWarDB turns Wikidata's crowdsourced conflict records into a clean,
+      analysis-ready panel dataset — built for historians, political
+      scientists, and anyone who needs rigorous, reproducible war data.
+    </p>
+    <div class="hero-cta">
+      <a class="btn primary" href="https://github.com/VincenzoManto/histwardb" rel="noopener">Get the code</a>
+      <a class="btn ghost" href="#quickstart">See it in action ↓</a>
+    </div>
+
+    <div class="stats reveal">
+      <div class="stat">
+        <div class="num"><span data-count="326" data-suffix="">0</span></div>
+        <div class="lbl">Years of coverage</div>
+      </div>
+      <div class="stat">
+        <div class="num"><span data-count="25" data-suffix="yr">0</span></div>
+        <div class="lbl">SPARQL chunk size</div>
+      </div>
+      <div class="stat">
+        <div class="num"><span data-count="6" data-suffix="">0</span></div>
+        <div class="lbl">Analytical views</div>
+      </div>
+      <div class="stat">
+        <div class="num">MIT</div>
+        <div class="lbl">Open license</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Why HistWarDB</span>
+        <h2>Built for rigorous historical analysis</h2>
+        <p>Every record goes through anti-noise filtering and chronological sanity checks before it reaches your DataFrame.</p>
+      </div>
+
+      <div class="grid">
+        <div class="card reveal">
+          <div class="icon">⚡</div>
+          <h3>Dynamic SPARQL pipeline</h3>
+          <p>Fetches conflicts in 25-year temporal chunks to bypass Wikidata query limits and maximize data completeness.</p>
+        </div>
+        <div class="card reveal">
+          <div class="icon">🧹</div>
+          <h3>Anti-noise filtering</h3>
+          <p>Automatically excludes peacekeeping missions (<code>wd:Q35349</code>), military exercises (<code>wd:Q1151430</code>), and non-state actors.</p>
+        </div>
+        <div class="card reveal">
+          <div class="icon">🏛️</div>
+          <h3>Historical state support</h3>
+          <p>Tracks entities like the <em>German Empire</em>, <em>Qing dynasty</em>, and <em>Kingdom of Montenegro</em> with built-in lifespan sanity checks.</p>
+        </div>
+        <div class="card reveal">
+          <div class="icon">🔀</div>
+          <h3>Flexible analytical views</h3>
+          <p>Transform data into long format, binary matrices, conflict-name mappings, or keyword search results — on demand.</p>
+        </div>
+        <div class="card reveal">
+          <div class="icon">📊</div>
+          <h3>Interactive visualizations</h3>
+          <p>Out-of-the-box Plotly heatmaps to visualize global conflict intensity across centuries.</p>
+        </div>
+        <div class="card reveal">
+          <div class="icon">✅</div>
+          <h3>Tested & reproducible</h3>
+          <p>Network I/O, query construction, and cleaning logic are separated into independent modules with a full pytest suite — no live Wikidata access required to run it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Quick start</span>
+        <h2>From install to heatmap in four lines</h2>
+        <p>Works locally or on Google Colab.</p>
+      </div>
+
+      <div class="code-panel reveal">
+        <div class="code-topbar">
+          <span></span><span></span><span></span>
+          <span class="filename">quickstart.py</span>
+        </div>
+        <pre class="code"><span class="k">from</span> <span class="n">histwardb</span> <span class="k">import</span> <span class="n">HistWarDB</span>
+
+<span class="c"># Initialize the dataset from 1700 to 2026</span>
+<span class="n">gwd</span> <span class="n">=</span> <span class="f">HistWarDB</span>(<span class="n">start_year</span>=<span class="n">1700</span>, <span class="n">end_year</span>=<span class="n">2026</span>)
+
+<span class="c"># Query specific countries in long format</span>
+<span class="n">france_uk_wars</span> <span class="n">=</span> <span class="n">gwd</span>(<span class="n">countries</span>=[<span class="s">"France"</span>, <span class="s">"United Kingdom"</span>], <span class="n">view</span>=<span class="s">"long"</span>, <span class="n">only_in_war</span>=<span class="n">True</span>)
+
+<span class="c"># Plot an interactive heatmap for the top 15 conflict-prone states</span>
+<span class="n">gwd</span>.<span class="f">plot_heatmap</span>(<span class="n">top_n</span>=<span class="n">15</span>, <span class="n">from_year</span>=<span class="n">1800</span>, <span class="n">to_year</span>=<span class="n">2026</span>).<span class="f">show</span>()</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="views">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Analytical views</span>
+        <h2>One call, six shapes of data</h2>
+        <p>Every view respects the same filters: <code>countries</code>, <code>from_date</code>/<code>to_date</code>, <code>only_in_war</code>, <code>keyword</code>.</p>
+      </div>
+
+      <table class="views-table reveal">
+        <thead>
+          <tr><th>View</th><th>Returns</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>"long"</code></td><td>Tidy DataFrame: <code>Country</code>, <code>Year</code>, <code>War_State</code>, <code>Active_Conflicts</code>.</td></tr>
+          <tr><td><code>"binary"</code></td><td>Wide pivot: countries × years, <code>1</code> = at war, <code>0</code> = peace.</td></tr>
+          <tr><td><code>"names"</code></td><td>Wide pivot with literal conflict names active per year.</td></tr>
+          <tr><td><code>"list"</code></td><td>Alphabetical list of unique conflict names under current filters.</td></tr>
+          <tr><td><code>"countries"</code></td><td>Sorted list of active states matching the query.</td></tr>
+          <tr><td><code>"conflicts"</code></td><td>Sorted list of unique conflicts matching the query.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Under the hood</span>
+        <h2>Three layers, independently testable</h2>
+        <p>Network I/O, query construction, and data cleaning never mix — which is what makes the full test suite run without touching the live Wikidata endpoint.</p>
+      </div>
+
+      <div class="arch reveal">
+        <div class="step">
+          <div class="no">01 · query.py</div>
+          <h4>SPARQL construction</h4>
+          <p>Pure functions build the query text for each 25-year chunk. No network, no side effects.</p>
+        </div>
+        <div class="step">
+          <div class="no">02 · core.py (fetch)</div>
+          <h4>Network layer</h4>
+          <p>An injectable <code>requests</code>-like session executes the query. Tests swap in a fake session.</p>
+        </div>
+        <div class="step">
+          <div class="no">03 · core.py (clean)</div>
+          <h4>Parsing &amp; filtering</h4>
+          <p>Anachronism checks, lifespan consistency, and grid construction — all pure, all unit-tested.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="citation">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="eyebrow">Academic use</span>
+        <h2>Cite it in your research</h2>
+        <p>Machine-readable citation metadata is also available in <a href="https://github.com/VincenzoManto/histwardb/blob/main/CITATION.cff">CITATION.cff</a>.</p>
+      </div>
+
+      <div class="cite-panel reveal">
+        <div class="cite-box">
+          <button class="copy-btn" data-copy="#bibtex">Copy</button>
+          <pre id="bibtex">@software{histwardb2026,
+  author = {Manto, Vincenzo and Dal Cero, Riccardo},
+  title  = {HistWarDB: A Dynamic Wikidata-Based Historical War Dataset},
+  year   = {2026},
+  url    = {https://github.com/VincenzoManto/histwardb}
+}</pre>
+        </div>
+        <div class="authors">
+          <a class="author" href="https://orcid.org/0009-0007-0065-4847" rel="noopener">
+            <div class="av">VM</div>
+            <div class="meta"><strong>Vincenzo Manto</strong><span>ORCID 0009-0007-0065-4847</span></div>
+          </a>
+          <a class="author" href="https://orcid.org/0009-0003-1308-0230" rel="noopener">
+            <div class="av">RD</div>
+            <div class="meta"><strong>Riccardo Dal Cero</strong><span>ORCID 0009-0003-1308-0230</span></div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-final wrap reveal">
+    <h2>Start querying history.</h2>
+    <p>Open source, MIT-licensed, and ready for your next research project.</p>
+    <div class="hero-cta">
+      <a class="btn primary" href="https://github.com/VincenzoManto/histwardb" rel="noopener">View on GitHub</a>
+      <a class="btn ghost" href="https://github.com/VincenzoManto/histwardb/blob/main/HistWarDB.ipynb" rel="noopener">Open the notebook</a>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <span>© 2026 Vincenzo Manto &amp; Riccardo Dal Cero — MIT License</span>
+    <div class="foot-links">
+      <a href="https://github.com/VincenzoManto/histwardb" rel="noopener">GitHub</a>
+      <a href="https://github.com/VincenzoManto/histwardb/blob/main/CONTRIBUTING.md" rel="noopener">Contributing</a>
+      <a href="https://github.com/VincenzoManto/histwardb/blob/main/LICENSE" rel="noopener">License</a>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/script.js"></script>
+</body>
+</html>
