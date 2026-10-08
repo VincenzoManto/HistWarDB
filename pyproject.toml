@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "histwardb"
+version = "0.1.0"
+description = "A dynamic, programmatic historical and sovereign war dataset built on Wikidata."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Vincenzo Manto" }]
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "pandas>=1.5",
+    "requests>=2.28",
+    "plotly>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/VincenzoManto/histwardb"
+Repository = "https://github.com/VincenzoManto/histwardb"
+Issues = "https://github.com/VincenzoManto/histwardb/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+
+[tool.ruff.lint]
+# UP006/UP007/UP045: keep typing.Optional/Union/List for readability and
+# consistency with the py3.9 floor, even though `from __future__ import
+# annotations` would allow the newer `X | None` syntax.
+ignore = ["UP006", "UP007", "UP045"]

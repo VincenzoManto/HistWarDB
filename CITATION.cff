@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software in academic work, please cite it as below."
+title: "HistWarDB: A Dynamic Wikidata-Based Historical War Dataset"
+authors:
+- family-names: "Manto"
+  given-names: "Vincenzo"
+  orcid: "https://orcid.org/0009-0007-0065-4847"
+- family-names: "Dal Cero"
+  given-names: "Riccardo"
+  orcid: "https://orcid.org/0009-0003-1308-0230"
+version: 0.1.0
+date-released: 2026-10-08
+url: "https://github.com/VincenzoManto/histwardb"
+license: MIT
+repository-code: "https://github.com/VincenzoManto/histwardb"
+keywords:
+  - wikidata
+  - conflict-data
+  - historical-data
+  - political-science
+  - war
