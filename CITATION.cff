@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use, extend or reference this framework, please cite it as below."
+authors:
+- family-names: "Manto"
+  given-names: "Vincenzo"
+  orcid: "https://orcid.org/0009-0007-0065-4847"
+- family-names: "Dal Cero"
+  given-names: "Riccardo"
+  orcid: "https://orcid.org/0009-0003-1308-0230"
+title: "HistWarDB"
+version: 0.6.0
+date-released: 2026-10-16
+url: "https://github.com/VincenzoManto/HistWarDB"
