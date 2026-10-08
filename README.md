@@ -4,6 +4,7 @@
 [![Tests](https://github.com/VincenzoManto/histwardb/actions/workflows/tests.yml/badge.svg)](https://github.com/VincenzoManto/histwardb/actions/workflows/tests.yml)
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![DOI](https://zenodo.org/badge/1410596751.svg)](https://doi.org/10.5281/zenodo.23243673)
 
 **HistoricalWarDB** (HistWarDB) is a dynamic, programmatic Python toolkit designed to extract, clean, and analyze global warfare data from Wikidata spanning from 1700 to the present. Built for researchers, historians, and data scientists, it bridges the gap between crowdsourced knowledge and rigorous historical data pipelines, supporting both modern sovereign states and historical empires.
 

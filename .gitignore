@@ -12,3 +12,4 @@ htmlcov/
 venv/
 *.csv
 .ipynb_checkpoints/
+release.ps1
