@@ -1,4 +1,4 @@
-﻿cff-version: 1.2.0
+cff-version: 1.2.0
 message: "If you use this software in academic work, please cite it as below."
 title: "HistWarDB: A Dynamic Wikidata-Based Historical War Dataset"
 authors:
