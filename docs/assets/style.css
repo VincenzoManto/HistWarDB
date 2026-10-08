@@ -404,8 +404,9 @@ section {
   align-items: center;
   justify-content: center;
   font-size: 1.3rem;
+  display: none;
   margin-bottom: 20px;
-  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  background: linear-gradient(135deg, #fff, #ddd);
 }
 
 .card h3 {
