@@ -27,6 +27,13 @@ def test_binary_view_shape(dataset_from_bindings):
     assert binary.loc["France", 1940] == 1
 
 
+def test_countries_filter_is_exact_not_substring(dataset_from_bindings):
+    # "France" must not pull in an unrelated country whose label happens to
+    # contain it as a substring.
+    result = dataset_from_bindings(countries="France", view="long")
+    assert set(result["Country"]) == {"France"}
+
+
 def test_names_view_contains_conflict_name(dataset_from_bindings):
     names = dataset_from_bindings(countries="France", from_date=1940, to_date=1940, view="names")
     assert "Test War One" in names.loc["France", 1940]

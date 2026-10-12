@@ -8,12 +8,12 @@ WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
 
 DEFAULT_USER_AGENT = "HistWarDB/0.1 (academic-research; +https://github.com/VincenzoManto/histwardb)"
 
-# Conflict class: military conflict (and subclasses).
+# Conflict class: war (and subclasses).
 CONFLICT_CLASS = "wd:Q198"
 
 # Classes excluded from being treated as a "war": peacekeeping missions and
 # military exercises are noise for a sovereign-war dataset.
-EXCLUDED_CONFLICT_CLASSES = ("wd:Q35349", "wd:Q1151430")
+EXCLUDED_CONFLICT_CLASSES = ("wd:Q20082270", "wd:Q357104")
 
 # Entity types eligible as belligerents: sovereign state, historical country,
 # country.
@@ -21,7 +21,7 @@ COUNTRY_TYPES = ("wd:Q3624078", "wd:Q3024240", "wd:Q6256")
 
 # Non-state entity classes excluded from the belligerent side: human,
 # organization, national sports team.
-EXCLUDED_COUNTRY_CLASSES = ("wd:Q5", "wd:Q83370", "wd:Q7278")
+EXCLUDED_COUNTRY_CLASSES = ("wd:Q5", "wd:Q43229", "wd:Q1194951")
 
 
 def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
@@ -37,16 +37,16 @@ def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
         with no recorded end date.
     """
     excluded_conflicts = "\n".join(
-        f"MINUS {{ ?conflict wdt:P31/wdt:279* {cls} . }}" for cls in EXCLUDED_CONFLICT_CLASSES
+        f"MINUS {{ ?conflict wdt:P31/wdt:P279* {cls} . }}" for cls in EXCLUDED_CONFLICT_CLASSES
     )
     excluded_countries = "\n".join(
-        f"MINUS {{ ?country wdt:P31/wdt:279* {cls} . }}" for cls in EXCLUDED_COUNTRY_CLASSES
+        f"MINUS {{ ?country wdt:P31/wdt:P279* {cls} . }}" for cls in EXCLUDED_COUNTRY_CLASSES
     )
     country_values = " ".join(COUNTRY_TYPES)
 
     return f"""
     SELECT DISTINCT ?conflictLabel ?countryLabel ?startDate ?endDate ?countryStart ?countryEnd ?countryEndFallback WHERE {{
-        ?conflict wdt:P31/wdt:279* {CONFLICT_CLASS} ;
+        ?conflict wdt:P31/wdt:P279* {CONFLICT_CLASS} ;
                 wdt:P710 ?country ;
                 wdt:P580 ?startDate .
 
@@ -54,7 +54,7 @@ def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
 
         {excluded_conflicts}
 
-        ?country wdt:P31/wdt:279* ?countryType .
+        ?country wdt:P31/wdt:P279* ?countryType .
         VALUES ?countryType {{ {country_values} }}
 
         OPTIONAL {{ ?country wdt:P571 ?countryStart . }}

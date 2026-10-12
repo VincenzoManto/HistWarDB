@@ -10,8 +10,16 @@ def test_build_sparql_query_contains_temporal_bounds():
 
 def test_build_sparql_query_excludes_noise_classes():
     q = build_sparql_query(1900, 1925, 2026)
-    assert "wd:Q35349" in q  # peacekeeping missions
-    assert "wd:Q1151430" in q  # military exercises
+    assert "wd:Q20082270" in q  # peacekeeping mission
+    assert "wd:Q357104" in q  # military exercise
+    assert "wd:Q43229" in q  # organization
+    assert "wd:Q1194951" in q  # national sports team
+
+
+def test_build_sparql_query_uses_subclass_path():
+    q = build_sparql_query(1900, 1925, 2026)
+    assert "wdt:279*" not in q
+    assert q.count("wdt:P31/wdt:P279*") == 7
 
 
 def test_build_sparql_query_is_valid_looking_sparql():

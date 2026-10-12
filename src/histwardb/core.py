@@ -201,7 +201,9 @@ class HistWarDB:
         auto_fetch: bool = True,
     ) -> None:
         self.start_year = start_year
-        self.end_year = end_year if end_year else datetime.datetime.now(tz=datetime.timezone.utc).year
+        self.end_year = (
+            end_year if end_year is not None else datetime.datetime.now(tz=datetime.timezone.utc).year
+        )
         self.chunk_size = chunk_size
         self.session = session or requests
         self.df_long: Optional[pd.DataFrame] = None
@@ -229,8 +231,11 @@ class HistWarDB:
         all_records: list[dict] = []
         for chunk_start in range(self.start_year, self.end_year, self.chunk_size):
             chunk_end = min(chunk_start + self.chunk_size, self.end_year)
+            # The query filter's upper bound is exclusive; the last chunk must
+            # include wars starting in end_year itself, not just before it.
+            query_end = chunk_end + 1 if chunk_end >= self.end_year else chunk_end
             try:
-                bindings = self._fetch_chunk(chunk_start, chunk_end)
+                bindings = self._fetch_chunk(chunk_start, query_end)
                 all_records.extend(parse_bindings(bindings, self.end_year))
             except requests.RequestException as exc:
                 print(f"Block {chunk_start}-{chunk_end} temporarily skipped: {exc}")
@@ -273,8 +278,8 @@ class HistWarDB:
 
         if countries:
             c_list = [countries] if isinstance(countries, str) else list(countries)
-            regex_pattern = "|".join(re.escape(c) for c in c_list)
-            df = df[df["Country"].str.contains(regex_pattern, case=False, na=False)]
+            wanted = {c.casefold() for c in c_list}
+            df = df[df["Country"].str.casefold().isin(wanted)]
 
         if from_date is not None:
             df = df[df["Year"] >= int(str(from_date).split("-")[0])]
@@ -283,7 +288,7 @@ class HistWarDB:
         if only_in_war:
             df = df[df["War_State"] == 1]
         if keyword:
-            df = df[df["Active_Conflicts"].str.contains(keyword, case=False, na=False)]
+            df = df[df["Active_Conflicts"].str.contains(keyword, case=False, na=False, regex=False)]
 
         return self._render_view(df, view)
 
