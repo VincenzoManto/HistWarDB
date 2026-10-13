@@ -1,7 +1,14 @@
 import pandas as pd
 import pytest
 
-from histwardb.core import clean_dataframe, parse_bindings, parse_year
+from histwardb.core import (
+    build_records,
+    clean_dataframe,
+    impute_end_year,
+    parse_bindings,
+    parse_entities,
+    parse_year,
+)
 
 
 @pytest.mark.parametrize(
@@ -114,3 +121,149 @@ def test_clean_dataframe_out_of_range_is_discarded():
     )
     cleaned = clean_dataframe(df_raw, start_year=1900, end_year=2026)
     assert cleaned.empty
+
+
+# -- missing end dates ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "policy,start,expected",
+    [
+        ("heuristic", 1850, 2026),
+        ("heuristic", 1750, 1755),
+        ("open", 1750, 2026),
+        ("start_only", 1850, 1850),
+        ("drop", 1850, None),
+    ],
+)
+def test_impute_end_year_policies(policy, start, expected):
+    assert impute_end_year(start, 2026, policy) == expected
+
+
+def test_impute_end_year_rejects_unknown_policy():
+    with pytest.raises(ValueError):
+        impute_end_year(1850, 2026, "guess")
+
+
+def test_parse_bindings_flags_imputed_end_dates(sample_bindings):
+    records = parse_bindings(sample_bindings, end_year=2026)
+    by_country = {r["country"]: r for r in records}
+    assert by_country["Narnia"]["end_imputed"] is True
+    assert by_country["France"]["end_imputed"] is False
+
+
+def test_parse_bindings_drop_policy_discards_undated_conflicts(sample_bindings):
+    records = parse_bindings(sample_bindings, end_year=2026, missing_end="drop")
+    assert {r["country"] for r in records} == {"France", "United Kingdom"}
+
+
+# -- entity metadata -------------------------------------------------------------
+
+
+def test_parse_entities_reduces_multiple_values(sample_entities):
+    entities = parse_entities([b for bindings in sample_entities.values() for b in bindings])
+    assert entities["Q901"] == {"label": "Short Republic", "start": 1920, "end": 1950, "iso3": None}
+    assert entities["Q142"]["iso3"] == "FRA"
+
+
+def test_parse_entities_uses_qid_when_label_is_missing():
+    entities = parse_entities([{"item": {"value": "http://www.wikidata.org/entity/Q42"}}])
+    assert entities["Q42"]["label"] == "Q42"
+
+
+def test_parse_entities_end_time_is_only_a_fallback_for_dissolution():
+    item = {"value": "http://www.wikidata.org/entity/Q1"}
+    with_both = [
+        {"item": item, "dissolved": {"value": "1918-11-09T00:00:00Z"}, "endTime": {"value": "1933-01-01T00:00:00Z"}}
+    ]
+    only_end_time = [{"item": item, "endTime": {"value": "1933-01-01T00:00:00Z"}}]
+    assert parse_entities(with_both)["Q1"]["end"] == 1918
+    assert parse_entities(only_end_time)["Q1"]["end"] == 1933
+
+
+def test_build_records_joins_metadata(sample_participations, sample_entities):
+    entities = parse_entities([b for bindings in sample_entities.values() for b in bindings])
+    records = build_records(sample_participations, entities, entities, end_year=1975)
+    undated = next(r for r in records if r["conflict_qid"] == "Q900")
+    assert undated["country"] == "Short Republic"
+    assert undated["country_start"] == 1920
+    assert undated["country_end"] == 1950
+    assert undated["end_imputed"] is True
+
+
+# -- lifespan clipping -----------------------------------------------------------
+
+
+def _record(country, conflict, start, end, country_start=None, country_end=None, **extra):
+    return {
+        "country": country,
+        "conflict_name": conflict,
+        "start_year": start,
+        "end_year": end,
+        "country_start": country_start,
+        "country_end": country_end,
+        **extra,
+    }
+
+
+def test_clean_dataframe_clips_war_to_state_lifespan():
+    df_raw = pd.DataFrame(
+        [
+            # state founded during the war
+            _record("Late Kingdom", "Long War", 1700, 1721, country_start=1707),
+            # state dissolved during the war
+            _record("Doomed Empire", "Long War", 1700, 1721, country_end=1712),
+        ]
+    )
+    cleaned = clean_dataframe(df_raw, start_year=1600, end_year=2026).set_index("country")
+    assert (cleaned.loc["Late Kingdom", "start_year"], cleaned.loc["Late Kingdom", "end_year"]) == (1707, 1721)
+    assert (cleaned.loc["Doomed Empire", "start_year"], cleaned.loc["Doomed Empire", "end_year"]) == (1700, 1712)
+    # the conflict's own dates are preserved
+    assert cleaned.loc["Late Kingdom", "war_start_year"] == 1700
+    assert cleaned.loc["Doomed Empire", "war_end_year"] == 1721
+
+
+def test_clean_dataframe_forced_max_year_clips_instead_of_dropping():
+    df_raw = pd.DataFrame([_record("Qing dynasty", "Sino-Japanese Wars", 1894, 1945)])
+    cleaned = clean_dataframe(df_raw, start_year=1800, end_year=2026)
+    assert len(cleaned) == 1
+    assert cleaned.iloc[0]["end_year"] == 1912
+
+
+def test_clean_dataframe_uses_one_lifespan_per_country():
+    # Wikidata returned two inception dates: every row of the country must
+    # be judged against the same (earliest) one.
+    df_raw = pd.DataFrame(
+        [
+            _record("Twice Founded", "Early War", 1805, 1806, country_start=1800, country_qid="Q1"),
+            _record("Twice Founded", "Early War", 1805, 1806, country_start=1810, country_qid="Q1"),
+        ]
+    )
+    cleaned = clean_dataframe(df_raw, start_year=1700, end_year=2026)
+    assert len(cleaned) == 1
+    assert cleaned.iloc[0]["country_start"] == 1800
+    assert cleaned.iloc[0]["start_year"] == 1805
+
+
+def test_clean_dataframe_recorded_end_beats_imputed_end():
+    df_raw = pd.DataFrame(
+        [
+            _record("France", "Some War", 1900, 2026, end_imputed=True, country_qid="Q142", conflict_qid="Q7"),
+            _record("France", "Some War", 1900, 1902, end_imputed=False, country_qid="Q142", conflict_qid="Q7"),
+        ]
+    )
+    cleaned = clean_dataframe(df_raw, start_year=1800, end_year=2026)
+    assert len(cleaned) == 1
+    assert cleaned.iloc[0]["end_year"] == 1902
+    assert not cleaned.iloc[0]["end_imputed"]
+
+
+def test_clean_dataframe_keeps_same_label_entities_apart():
+    df_raw = pd.DataFrame(
+        [
+            _record("Kingdom of Sardinia", "War A", 1720, 1721, country_qid="Q1"),
+            _record("Kingdom of Sardinia", "War B", 1850, 1851, country_qid="Q2"),
+        ]
+    )
+    cleaned = clean_dataframe(df_raw, start_year=1700, end_year=2026)
+    assert set(cleaned["country"]) == {"Kingdom of Sardinia (Q1)", "Kingdom of Sardinia (Q2)"}
