@@ -94,6 +94,14 @@ MISSING_END_POLICIES = ("heuristic", "open", "start_only", "drop")
 #                Wikidata lists only on a front or campaign.
 SUBCONFLICT_POLICIES = ("keep", "drop", "roll_up")
 
+# How items typed "series of wars" (e.g. Balkan Wars, Anglo-Burmese Wars) are
+# handled. Wikidata makes "series of wars" a subclass of war, so they pass the
+# base inclusion rule, but they overlap the individual wars they group:
+#   "keep" -- included like any other conflict (default);
+#   "drop" -- excluded.
+SERIES_OF_WARS_POLICIES = ("keep", "drop")
+SERIES_OF_WARS_LABEL = "series of wars"
+
 # Rounds of P361 ancestor look-ups when resolving top-level wars.
 MAX_ANCESTOR_ROUNDS = 6
 
@@ -490,6 +498,7 @@ def clean_dataframe(
     end_year: int,
     min_casualties: Optional[float] = None,
     subconflicts: str = "keep",
+    series_of_wars: str = "keep",
 ) -> pd.DataFrame:
     """Turn raw records into one clean row per (conflict, country) participation.
 
@@ -501,7 +510,8 @@ def clean_dataframe(
        toll (Wikidata P1120) is below it -- conflicts with no recorded toll
        are kept, since Wikidata's coverage of casualty figures is too sparse
        to treat "unknown" as "zero";
-    3. apply the ``subconflicts`` policy (:data:`SUBCONFLICT_POLICIES`);
+    3. apply the ``series_of_wars`` (:data:`SERIES_OF_WARS_POLICIES`) and
+       ``subconflicts`` (:data:`SUBCONFLICT_POLICIES`) policies;
     4. reduce each country to one lifespan (earliest start, latest end,
        capped by :data:`FORCED_MAX_YEARS`);
     5. reduce each (conflict, country) pair to one interval;
@@ -525,6 +535,14 @@ def clean_dataframe(
         df = df[df["casualties"].isna() | (df["casualties"] >= min_casualties)]
         if df.empty:
             return pd.DataFrame(columns=RECORD_COLUMNS)
+
+    if series_of_wars not in SERIES_OF_WARS_POLICIES:
+        raise ValueError(
+            f"Invalid series_of_wars {series_of_wars!r}. Choose from: {', '.join(SERIES_OF_WARS_POLICIES)}"
+        )
+    if series_of_wars == "drop":
+        types = df["conflict_type"].fillna("").astype(str).str.split("; ")
+        df = df[~types.apply(lambda t: SERIES_OF_WARS_LABEL in t)]
 
     df = _apply_subconflict_policy(df, subconflicts)
     if df.empty:
@@ -724,6 +742,9 @@ class HistWarDB:
         How conflicts that are part of another war in the dataset (e.g. a
         front of World War II) are handled; one of
         :data:`SUBCONFLICT_POLICIES`.
+    series_of_wars:
+        Whether items typed "series of wars" are kept or dropped; one of
+        :data:`SERIES_OF_WARS_POLICIES`.
     strict:
         When ``True`` (default) a chunk that still fails after all retries
         raises :class:`FetchError`. When ``False`` the chunk is skipped with
@@ -752,6 +773,7 @@ class HistWarDB:
         pre_cutoff_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
         missing_end: str = "heuristic",
         subconflicts: str = "keep",
+        series_of_wars: str = "keep",
         strict: bool = True,
         max_retries: int = 3,
         retry_backoff: float = 5.0,
@@ -766,6 +788,10 @@ class HistWarDB:
             raise ValueError(
                 f"Invalid subconflicts {subconflicts!r}. Choose from: {', '.join(SUBCONFLICT_POLICIES)}"
             )
+        if series_of_wars not in SERIES_OF_WARS_POLICIES:
+            raise ValueError(
+                f"Invalid series_of_wars {series_of_wars!r}. Choose from: {', '.join(SERIES_OF_WARS_POLICIES)}"
+            )
         self.start_year = start_year
         self.end_year = (
             end_year if end_year is not None else datetime.datetime.now(tz=datetime.timezone.utc).year
@@ -777,6 +803,7 @@ class HistWarDB:
         self.pre_cutoff_duration_years = pre_cutoff_duration_years
         self.missing_end = missing_end
         self.subconflicts = subconflicts
+        self.series_of_wars = series_of_wars
         self.strict = strict
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
@@ -936,6 +963,7 @@ class HistWarDB:
             self.end_year,
             min_casualties=self.min_casualties,
             subconflicts=self.subconflicts,
+            series_of_wars=self.series_of_wars,
         )
         self.df_records = attach_codes(self.df_records)
         self.df_long = build_long_grid(self.df_records, self.start_year, self.end_year)
@@ -971,6 +999,7 @@ class HistWarDB:
             "pre_cutoff_duration_years": self.pre_cutoff_duration_years,
             "min_casualties": self.min_casualties,
             "subconflicts": self.subconflicts,
+            "series_of_wars": self.series_of_wars,
             "failed_chunks": [list(c) for c in self.failed_chunks],
             "conflict_class": CONFLICT_CLASS,
             "excluded_conflict_classes": list(EXCLUDED_CONFLICT_CLASSES),
@@ -1015,6 +1044,7 @@ class HistWarDB:
             pre_cutoff_duration_years=metadata.get("pre_cutoff_duration_years", PRE_CUTOFF_DEFAULT_DURATION_YEARS),
             min_casualties=metadata.get("min_casualties"),
             subconflicts=metadata.get("subconflicts", "keep"),
+            series_of_wars=metadata.get("series_of_wars", "keep"),
             auto_fetch=False,
         )
         db.retrieved_at = metadata.get("retrieved_at")

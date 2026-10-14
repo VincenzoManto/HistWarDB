@@ -1,5 +1,5 @@
 {
-  "histwardb_version": "0.3.0",
+  "histwardb_version": "0.4.0",
   "retrieved_at": "2026-10-14T15:34:10+00:00",
   "source": "https://query.wikidata.org/sparql",
   "start_year": 1700,
@@ -10,6 +10,7 @@
   "pre_cutoff_duration_years": 5,
   "min_casualties": null,
   "subconflicts": "keep",
+  "series_of_wars": "keep",
   "failed_chunks": [],
   "conflict_class": "wd:Q198",
   "excluded_conflict_classes": [

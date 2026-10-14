@@ -19,8 +19,8 @@ Wikidata's class tree decides what is in scope, and it is broader than a
 war list would be. In the 2026-10-14 snapshot, 42 of the 502 conflicts are
 typed "series of wars" (e.g. Balkan Wars, Anglo-Burmese Wars, American
 Indian Wars), which Wikidata treats as a subclass of war. They overlap the
-individual wars they group. Filter on
-`conflict_type` to drop them when counting wars. Conversely, a war item that
+individual wars they group. Pass `series_of_wars="drop"` (or filter on
+`conflict_type`) to leave them out when counting wars. Conversely, a war item that
 lacks `P580` (start time) or a state participant is not retrieved at all.
 
 ### 1.1 Exclusions

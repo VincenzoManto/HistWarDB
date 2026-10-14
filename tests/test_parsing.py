@@ -301,6 +301,22 @@ def test_clean_dataframe_recorded_end_beats_imputed_end():
     assert not cleaned.iloc[0]["duration_estimated"]
 
 
+def test_clean_dataframe_series_of_wars_policy():
+    df_raw = pd.DataFrame(
+        [
+            _record("France", "Coalition Wars", 1792, 1815, conflict_type="series of wars"),
+            _record("France", "War of the Third Coalition", 1803, 1806, conflict_type="war"),
+            _record("Spain", "Mixed", 1800, 1801, conflict_type="series of wars; war"),
+        ]
+    )
+    kept = clean_dataframe(df_raw, start_year=1700, end_year=2026)
+    assert len(kept) == 3
+    dropped = clean_dataframe(df_raw, start_year=1700, end_year=2026, series_of_wars="drop")
+    assert set(dropped["conflict_name"]) == {"War of the Third Coalition"}
+    with pytest.raises(ValueError):
+        clean_dataframe(df_raw, start_year=1700, end_year=2026, series_of_wars="merge")
+
+
 def test_clean_dataframe_keeps_same_label_entities_apart():
     df_raw = pd.DataFrame(
         [

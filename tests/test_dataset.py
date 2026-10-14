@@ -256,6 +256,11 @@ def test_invalid_missing_end_policy_raises():
         HistWarDB(auto_fetch=False, missing_end="guess")
 
 
+def test_invalid_series_of_wars_policy_raises():
+    with pytest.raises(ValueError):
+        HistWarDB(auto_fetch=False, series_of_wars="merge")
+
+
 def test_heatmap_marks_non_existence(lifespan_dataset):
     fig = lifespan_dataset.plot_heatmap(top_n=3)
     values = {v for row in fig.data[0].z for v in row}

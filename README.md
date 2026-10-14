@@ -102,6 +102,7 @@ gwd = HistWarDB.from_snapshot("data/snapshots/2026-10-14")
 gwd.conflicts                       # one row per conflict: type, parent/root war, dates, death toll
 gwd.dyads                           # pairs of states on opposing coalition sides
 HistWarDB(subconflicts="roll_up")   # attribute fronts and campaigns to their top-level war
+HistWarDB(series_of_wars="drop")    # leave out "series of wars" items such as the Balkan Wars
 ```
 
 Sides come only from coalitions that Wikidata lists as participants, so most conflicts have none; see the [codebook](CODEBOOK.md#24-sides-coalitions-and-roles).
