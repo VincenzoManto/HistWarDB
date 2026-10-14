@@ -1,0 +1,96 @@
+cow_war,cow_name,start,end,cow_states,cow_states_mapped,histwardb_conflict_qid,histwardb_conflict,shared_states,side_pairs_compared,side_pairs_agree
+1,Franco-Spanish War,1823,1823,2,2,Q849680,American Indian Wars,1,0,0
+4,First Russo-Turkish,1828,1829,2,2,Q287942,Ninth Russo-Turkish War,2,0,0
+7,Mexican-American,1846,1847,2,2,Q849680,American Indian Wars,2,0,0
+10,Austro-Sardinian,1848,1849,4,3,Q920894,First Italian War of Independence,3,0,0
+13,First Schleswig-Holstein,1848,1849,2,2,Q122166552,Huéscar-Danish War,1,0,0
+16,Roman Republic,1849,1849,4,4,Q920894,First Italian War of Independence,3,0,0
+19,La Plata,1851,1852,2,2,Q3042457,Platine War,1,0,0
+22,Crimean,1853,1856,5,5,Q254106,Crimean War,5,0,0
+25,Anglo-Persian,1856,1857,2,2,Q849680,American Indian Wars,1,0,0
+28,Italian Unification,1859,1859,3,3,Q418151,Second Opium War,1,0,0
+31,First Spanish-Moroccan,1859,1860,2,2,Q1540737,Hispano-Moroccan War,2,0,0
+34,Italian-Roman,1860,1860,2,2,,,0,0,0
+37,Neapolitan,1860,1861,2,2,,,0,0,0
+40,Franco-Mexican,1862,1867,2,2,Q849680,American Indian Wars,1,0,0
+43,Ecuadorian-Colombian,1863,1863,2,2,Q3118971,Ecuadorian–Colombian War,2,0,0
+46,Second Schleswig-Holstein,1864,1864,3,3,Q154981,Second Schleswig War,3,0,0
+49,Lopez,1864,1870,3,3,Q58947,Paraguayan War,3,1,1
+52,Naval War,1865,1866,3,3,Q742813,Chincha Islands War,3,0,0
+55,Seven Weeks,1866,1866,11,6,Q1202331,Germany Unification War,6,0,0
+58,Franco-Prussian,1870,1871,5,5,Q46083,Franco-Prussian War,5,0,0
+60,First Central American,1876,1876,2,2,,,0,0,0
+61,Second Russo-Turkish,1877,1878,2,2,Q686564,First Serbian–Ottoman War,2,0,0
+64,War of the Pacific,1879,1883,3,3,Q152004,War of the Pacific,3,0,0
+65,Conquest of Egypt,1882,1882,2,2,Q849680,American Indian Wars,1,0,0
+67,Sino-French,1884,1885,2,2,Q706183,Sino-French War,2,0,0
+70,Second Central American,1885,1885,2,2,,,0,0,0
+73,First Sino-Japanese,1894,1895,2,2,Q178687,First Sino-Japanese War,2,0,0
+76,Greco-Turkish,1897,1897,2,2,Q657055,Greco-Turkish War of 1897,2,0,0
+79,Spanish-American,1898,1898,2,2,Q849680,American Indian Wars,2,0,0
+82,Boxer Rebellion,1900,1900,6,6,Q849680,American Indian Wars,3,0,0
+83,Sino-Russian,1900,1900,2,2,Q849680,American Indian Wars,1,0,0
+85,Russo-Japanese,1904,1905,2,2,Q159950,Russo-Japanese War,2,0,0
+88,Third Central American,1906,1906,3,3,,,0,0,0
+91,Fourth Central American,1907,1907,3,3,,,0,0,0
+94,Second Spanish-Moroccan,1909,1910,2,2,Q849680,American Indian Wars,1,0,0
+97,Italian-Turkish,1911,1912,2,2,Q203824,Italo-Turkish War,2,0,0
+100,First Balkan,1912,1913,4,4,Q184183,Second Balkan War,4,0,0
+103,Second Balkan,1913,1913,5,5,Q184183,Second Balkan War,5,0,0
+106,World War I,1914,1918,15,15,Q361,World War I,11,45,45
+107,Estonian Liberation,1918,1920,3,3,Q3916827,Soviet-Finnish wars,2,0,0
+108,Latvian Liberation,1918,1920,4,5,Q3916827,Soviet-Finnish wars,2,0,0
+109,Russo-Polish,1919,1920,2,2,Q2742886,Lithuanian Wars of Independence,2,0,0
+112,Hungarian Adversaries,1919,1919,3,3,Q252298,Hungarian–Romanian War,2,0,0
+115,Second Greco-Turkish,1919,1922,2,2,Q361,World War I,2,1,1
+116,Franco-Turkish,1919,1921,2,2,Q234738,Turkish War of Independence,2,0,0
+117,Lithuanian-Polish,1920,1920,2,2,Q842774,Polish–Ukrainian War,1,0,0
+118,Manchurian,1929,1929,2,2,Q4222429,Sino–Tibetan War,1,0,0
+121,Second Sino-Japanese,1931,1933,2,2,Q106640290,Sino-Japanese Wars of 1893-1945,2,0,0
+124,Chaco,1932,1935,2,2,Q223126,Chaco War,2,0,0
+125,Saudi-Yemeni,1934,1934,2,2,Q1367731,Saudi–Yemeni War,2,0,0
+127,Conquest of Ethiopia,1935,1936,2,2,Q94916,Second Italo-Ethiopian War,2,0,0
+130,Third Sino-Japanese,1937,1941,2,2,Q362,World War II,2,1,1
+133,Changkufeng,1938,1938,2,2,Q696389,Soviet–Japanese border conflicts,2,0,0
+136,Nomonhan,1939,1939,3,3,Q696389,Soviet–Japanese border conflicts,2,0,0
+139,World War II,1939,1945,25,29,Q362,World War II,22,136,136
+142,Russo-Finnish,1939,1940,2,2,Q3916827,Soviet-Finnish wars,2,0,0
+145,Franco-Thai,1940,1941,2,2,Q780845,Franco-Thai War,2,0,0
+147,First Kashmir,1947,1949,2,2,Q1413732,Kashmir conflict,2,0,0
+148,Arab-Israeli,1948,1949,6,6,Q49097,1948 Palestine war,5,0,0
+151,Korean,1950,1953,16,16,Q8663,Korean War,15,0,0
+153,Off-shore Islands,1954,1955,2,2,Q8740,Vietnam War,1,0,0
+155,Sinai War,1956,1956,4,4,Q189266,Eastern Front,2,1,1
+156,Soviet Invasion of Hungary,1956,1956,2,2,Q189266,Eastern Front,2,0,0
+158,IfniWar,1957,1958,3,3,Q1640107,Ifni War,2,0,0
+159,Taiwan Straits,1958,1958,2,2,Q8740,Vietnam War,1,0,0
+160,Assam,1962,1962,2,2,Q208694,Sino-Indian War,2,0,0
+163,"Vietnam War, Phase 2",1965,1975,8,8,Q8740,Vietnam War,8,0,0
+166,Second Kashmir,1965,1965,2,2,Q233583,Indo-Pakistani War of 1965,2,0,0
+169,Six Day War,1967,1967,4,4,Q49077,Six-Day War,4,0,0
+170,"Second Laotian, Phase 2",1968,1973,4,4,Q877450,Laotian Civil War,4,0,0
+172,War of Attrition,1969,1970,2,2,Q322607,War of Attrition,2,0,0
+175,Football War,1969,1969,2,2,Q223085,Hundred Hour War,2,0,0
+176,Communist Coalition,1970,1971,4,4,Q8740,Vietnam War,4,0,0
+178,Bangladesh,1971,1971,2,2,Q371394,Bangladesh Liberation War,2,0,0
+181,Yom Kippur War,1973,1973,6,6,Q49100,Yom Kippur War,3,0,0
+184,Turco-Cypriot,1974,1974,2,1,,,0,0,0
+186,War over Angola,1975,1976,4,4,Q12055176,Angolan Civil War,2,0,0
+187,"Second Ogaden War, Phase 2",1977,1978,3,3,Q318250,Ogaden War,2,0,0
+189,Vietnamese-Cambodian,1977,1979,2,2,Q796498,Third Indochina War,2,0,0
+190,Ugandian-Tanzanian,1978,1979,3,3,Q202465,Uganda–Tanzania War,2,0,0
+193,Sino-Vietnamese Punitive,1979,1979,2,2,Q796498,Third Indochina War,2,0,0
+199,Iran-Iraq,1980,1988,2,2,Q82664,Iran–Iraq War,2,0,0
+202,Falkland Islands,1982,1982,2,2,Q48249,Falklands War,2,0,0
+205,War over Lebanon,1982,1982,2,2,Q49103,1982 Lebanon War,2,0,0
+207,War over the Aouzou Strip,1986,1987,2,2,Q611071,Chadian–Libyan War,1,0,0
+208,Sino-Vietnamese Border War,1987,1987,2,2,Q796498,Third Indochina War,2,0,0
+211,Gulf War,1990,1991,14,12,Q37643,Gulf War,7,0,0
+215,Bosnian Independence,1992,1992,3,3,Q68969,Croatian War of Independence,3,0,0
+216,Azeri-Armenian,1993,1994,2,2,Q381375,First Nagorno-Karabakh War,2,0,0
+217,Cenepa Valley,1995,1995,2,2,Q2337340,Cenepa War,2,0,0
+219,Badme Border,1998,2000,2,2,Q832273,Eritrean–Ethiopian War,2,0,0
+221,War for Kosovo,1999,1999,8,8,Q190029,Kosovo War,8,0,0
+223,Kargil War,1999,1999,2,2,Q404517,operation sindor,2,0,0
+225,Invasion of Afghanistan,2001,2001,6,6,Q182865,War in Afghanistan (2001–2021),6,0,0
+227,Invasion of Iraq,2003,2003,4,4,Q545449,Iraq War,4,0,0
