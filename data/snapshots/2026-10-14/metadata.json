@@ -1,11 +1,14 @@
 {
-  "histwardb_version": "0.1.0",
-  "retrieved_at": "2026-10-13T14:02:51+00:00",
+  "histwardb_version": "0.3.0",
+  "retrieved_at": "2026-10-14T15:08:24+00:00",
   "source": "https://query.wikidata.org/sparql",
   "start_year": 1700,
   "end_year": 2026,
   "chunk_size": 25,
   "missing_end": "heuristic",
+  "heuristic_cutoff_year": 1800,
+  "pre_cutoff_duration_years": 5,
+  "min_casualties": null,
   "failed_chunks": [],
   "conflict_class": "wd:Q198",
   "excluded_conflict_classes": [
@@ -28,10 +31,10 @@
   "n_participations": 1438,
   "n_conflicts": 502,
   "n_countries": 433,
-  "n_end_imputed": 44,
+  "n_duration_estimated": 44,
   "files": {
     "participations.csv": {
-      "sha256_lf": "50fc8ffb413e2b124a2f463438e68bf41176ee61afb7a545ee286b48f78c74c2"
+      "sha256_lf": "9ad34ac6fa7d495ae6e4c1964b93c99e34661037529e91e2a0dc70b0eb3539fc"
     }
   }
 }

@@ -42,6 +42,13 @@ EXCLUDED_CONFLICT_CLASSES = ("wd:Q20082270", "wd:Q357104")
 # every state; and humans or sports teams never pass the positive filter.
 COUNTRY_TYPES = ("wd:Q3624078", "wd:Q3024240", "wd:Q6256")
 
+# Wikidata property used to fetch a conflict's recorded death toll, so
+# callers can filter out low-severity/noise entries (see ``min_casualties``
+# on :class:`~histwardb.core.HistWarDB`). Fetched as OPTIONAL in the entity
+# query: conflicts without a recorded figure are never dropped purely for
+# lacking this data.
+CASUALTIES_PROPERTY = "wdt:P1120"
+
 # Maximum rows per participation query. A chunk returning exactly this many
 # rows is treated as truncated by the fetch layer.
 QUERY_LIMIT = 5000
@@ -101,8 +108,8 @@ def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
     """
 
 
-def build_entity_query(qids: Iterable[str], with_lifespan: bool = True) -> str:
-    """Build the query fetching English labels (and lifespans) for ``qids``.
+def build_entity_query(qids: Iterable[str], with_lifespan: bool = True, with_casualties: bool = False) -> str:
+    """Build the query fetching English labels (and attributes) for ``qids``.
 
     Parameters
     ----------
@@ -111,22 +118,28 @@ def build_entity_query(qids: Iterable[str], with_lifespan: bool = True) -> str:
     with_lifespan:
         When ``True`` also fetch inception (``P571``), dissolution (``P576``),
         end time (``P582``) and ISO 3166-1 alpha-3 code (``P298``). Used for
-        countries; conflicts only need a label.
+        countries.
+    with_casualties:
+        When ``True`` also fetch the recorded death toll
+        (:data:`CASUALTIES_PROPERTY`). Used for conflicts.
     """
     values = " ".join(f"wd:{qid}" for qid in qids)
-    lifespan_vars = " ?inception ?dissolved ?endTime ?iso3" if with_lifespan else ""
-    lifespan_patterns = (
-        """
+    variables = ""
+    patterns = ""
+    if with_lifespan:
+        variables += " ?inception ?dissolved ?endTime ?iso3"
+        patterns += """
         OPTIONAL { ?item wdt:P571 ?inception . }
         OPTIONAL { ?item wdt:P576 ?dissolved . }
         OPTIONAL { ?item wdt:P582 ?endTime . }
         OPTIONAL { ?item wdt:P298 ?iso3 . }"""
-        if with_lifespan
-        else ""
-    )
+    if with_casualties:
+        variables += " ?casualties"
+        patterns += f"""
+        OPTIONAL {{ ?item {CASUALTIES_PROPERTY} ?casualties . }}"""
     return f"""
-    SELECT ?item ?itemLabel{lifespan_vars} WHERE {{
+    SELECT ?item ?itemLabel{variables} WHERE {{
         VALUES ?item {{ {values} }}
-        OPTIONAL {{ ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en") }}{lifespan_patterns}
+        OPTIONAL {{ ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en") }}{patterns}
     }}
     """

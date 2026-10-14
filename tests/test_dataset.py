@@ -95,7 +95,7 @@ def lifespan_dataset():
                 "conflict_qid": "Q900",
                 "start_year": 1930,
                 "end_year": 1960,
-                "end_imputed": True,
+                "duration_estimated": True,
                 "country_start": 1920,
                 "country_end": 1950,
             },
@@ -107,7 +107,7 @@ def lifespan_dataset():
                 "conflict_qid": "Q800",
                 "start_year": 1940,
                 "end_year": 1941,
-                "end_imputed": False,
+                "duration_estimated": False,
                 "country_start": None,
                 "country_end": None,
             },
@@ -119,7 +119,7 @@ def lifespan_dataset():
                 "conflict_qid": "Q800",
                 "start_year": 1940,
                 "end_year": 1941,
-                "end_imputed": False,
+                "duration_estimated": False,
                 "country_start": None,
                 "country_end": 1947,
             },
@@ -157,6 +157,15 @@ def test_war_imputed_flags_years_beyond_an_undated_start(lifespan_dataset):
     assert df.loc[1931, "War_Imputed"] == 1
     assert df.loc[1929, "War_Imputed"] == 0  # not at war at all
     assert (lifespan_dataset(countries="Russia", view="long")["War_Imputed"] == 0).all()
+
+
+def test_duration_estimated_marks_every_year_of_an_undated_conflict(lifespan_dataset):
+    df = lifespan_dataset(countries="Short Republic", view="long").set_index("Year")
+    # unlike War_Imputed, the start year is flagged too
+    assert bool(df.loc[1930, "Duration_Estimated"])
+    assert bool(df.loc[1945, "Duration_Estimated"])
+    assert not bool(df.loc[1929, "Duration_Estimated"])
+    assert not lifespan_dataset(countries="Russia", view="long")["Duration_Estimated"].any()
 
 
 def test_only_existing_drops_years_outside_lifespan(lifespan_dataset):

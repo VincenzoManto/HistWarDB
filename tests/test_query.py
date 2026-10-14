@@ -67,4 +67,12 @@ def test_build_entity_query_labels_only():
     q = build_entity_query(["Q362"], with_lifespan=False)
     assert "rdfs:label" in q
     assert "wdt:P571" not in q
+    assert "wdt:P1120" not in q
+    assert q.count("{") == q.count("}")
+
+
+def test_build_entity_query_with_casualties():
+    q = build_entity_query(["Q362"], with_lifespan=False, with_casualties=True)
+    assert "OPTIONAL { ?item wdt:P1120 ?casualties . }" in q
+    assert "?casualties" in q.split("WHERE")[0]
     assert q.count("{") == q.count("}")

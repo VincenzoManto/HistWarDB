@@ -140,6 +140,29 @@ def test_impute_end_year_policies(policy, start, expected):
     assert impute_end_year(start, 2026, policy) == expected
 
 
+def test_impute_end_year_heuristic_is_configurable():
+    assert impute_end_year(1850, 2026, "heuristic", heuristic_cutoff_year=1900, pre_cutoff_duration_years=2) == 1852
+    assert impute_end_year(1950, 2026, "heuristic", heuristic_cutoff_year=1900, pre_cutoff_duration_years=2) == 2026
+
+
+def test_parse_bindings_passes_heuristic_parameters(sample_bindings):
+    records = parse_bindings(sample_bindings, end_year=2026, heuristic_cutoff_year=2100, pre_cutoff_default_duration_years=3)
+    narnia = next(r for r in records if r["country"] == "Narnia")
+    assert narnia["end_year"] == 2023
+
+
+def test_parse_bindings_reads_casualties():
+    binding = {
+        "countryLabel": {"value": "France"},
+        "conflictLabel": {"value": "Big War"},
+        "startDate": {"value": "1914-01-01T00:00:00Z"},
+        "casualties": {"value": "1500000"},
+    }
+    bad = dict(binding, casualties={"value": "unknown"})
+    assert parse_bindings([binding], end_year=2026)[0]["casualties"] == 1_500_000
+    assert parse_bindings([bad], end_year=2026)[0]["casualties"] is None
+
+
 def test_impute_end_year_rejects_unknown_policy():
     with pytest.raises(ValueError):
         impute_end_year(1850, 2026, "guess")
@@ -148,8 +171,8 @@ def test_impute_end_year_rejects_unknown_policy():
 def test_parse_bindings_flags_imputed_end_dates(sample_bindings):
     records = parse_bindings(sample_bindings, end_year=2026)
     by_country = {r["country"]: r for r in records}
-    assert by_country["Narnia"]["end_imputed"] is True
-    assert by_country["France"]["end_imputed"] is False
+    assert by_country["Narnia"]["duration_estimated"] is True
+    assert by_country["France"]["duration_estimated"] is False
 
 
 def test_parse_bindings_drop_policy_discards_undated_conflicts(sample_bindings):
@@ -162,8 +185,28 @@ def test_parse_bindings_drop_policy_discards_undated_conflicts(sample_bindings):
 
 def test_parse_entities_reduces_multiple_values(sample_entities):
     entities = parse_entities([b for bindings in sample_entities.values() for b in bindings])
-    assert entities["Q901"] == {"label": "Short Republic", "start": 1920, "end": 1950, "iso3": None}
+    assert entities["Q901"] == {"label": "Short Republic", "start": 1920, "end": 1950, "iso3": None, "casualties": None}
     assert entities["Q142"]["iso3"] == "FRA"
+
+
+def test_parse_entities_keeps_largest_casualty_estimate(sample_entities):
+    entities = parse_entities([b for bindings in sample_entities.values() for b in bindings])
+    assert entities["Q362"]["casualties"] == 85_000_000
+    assert entities["Q142"]["casualties"] is None
+
+
+def test_clean_dataframe_min_casualties_keeps_unknown_tolls():
+    df_raw = pd.DataFrame(
+        [
+            _record("France", "Skirmish", 1900, 1900, casualties=12),
+            _record("France", "Big War", 1914, 1918, casualties=1_500_000),
+            _record("France", "Undocumented War", 1920, 1921),
+        ]
+    )
+    cleaned = clean_dataframe(df_raw, start_year=1800, end_year=2026, min_casualties=1000)
+    assert set(cleaned["conflict_name"]) == {"Big War", "Undocumented War"}
+    # no threshold: nothing is filtered on severity
+    assert len(clean_dataframe(df_raw, start_year=1800, end_year=2026)) == 3
 
 
 def test_parse_entities_uses_qid_when_label_is_missing():
@@ -188,7 +231,7 @@ def test_build_records_joins_metadata(sample_participations, sample_entities):
     assert undated["country"] == "Short Republic"
     assert undated["country_start"] == 1920
     assert undated["country_end"] == 1950
-    assert undated["end_imputed"] is True
+    assert undated["duration_estimated"] is True
 
 
 # -- lifespan clipping -----------------------------------------------------------
@@ -248,14 +291,14 @@ def test_clean_dataframe_uses_one_lifespan_per_country():
 def test_clean_dataframe_recorded_end_beats_imputed_end():
     df_raw = pd.DataFrame(
         [
-            _record("France", "Some War", 1900, 2026, end_imputed=True, country_qid="Q142", conflict_qid="Q7"),
-            _record("France", "Some War", 1900, 1902, end_imputed=False, country_qid="Q142", conflict_qid="Q7"),
+            _record("France", "Some War", 1900, 2026, duration_estimated=True, country_qid="Q142", conflict_qid="Q7"),
+            _record("France", "Some War", 1900, 1902, duration_estimated=False, country_qid="Q142", conflict_qid="Q7"),
         ]
     )
     cleaned = clean_dataframe(df_raw, start_year=1800, end_year=2026)
     assert len(cleaned) == 1
     assert cleaned.iloc[0]["end_year"] == 1902
-    assert not cleaned.iloc[0]["end_imputed"]
+    assert not cleaned.iloc[0]["duration_estimated"]
 
 
 def test_clean_dataframe_keeps_same_label_entities_apart():

@@ -10,9 +10,9 @@ whenever those rules change.
 
 A **conflict** is any Wikidata item that is an instance of `war` (`wd:Q198`)
 or of one of its subclasses (`P31` then `P279*`: world war, civil war, proxy
-war, war of independence, ...). There is no minimum-fatality threshold:
-HistWarDB inherits Wikidata's own inclusion criteria rather than imposing a
-COW-style battle-death cutoff. This is a deliberate scope choice that trades
+war, war of independence, ...). By default there is no minimum-fatality
+threshold: HistWarDB inherits Wikidata's own inclusion criteria rather than
+imposing a COW-style battle-death cutoff. This is a deliberate scope choice that trades
 precision for coverage across under-documented historical conflicts.
 
 Items that are not typed under `war` are out of scope even when they describe
@@ -28,6 +28,27 @@ of:
 |---|---|---|
 | Peacekeeping mission | `wd:Q20082270` | Not a belligerent conflict |
 | Military exercise | `wd:Q357104` | Simulated, not actual combat |
+
+### 1.2 Optional severity threshold (`min_casualties`)
+
+Because "no threshold" mixes a world war with a two-day local rebellion,
+callers can opt into a minimum severity filter with
+`HistWarDB(min_casualties=...)`:
+
+- Each conflict's recorded death toll is fetched from Wikidata property
+  `P1120` (`CASUALTIES_PROPERTY` in [`query.py`](src/histwardb/query.py)) as
+  an `OPTIONAL` field of the conflict entity query. When several estimates
+  are recorded, the largest is used, which keeps the filter conservative.
+  It is carried as `casualties` in the participation table.
+- When `min_casualties` is set, a conflict whose *recorded* toll is below the
+  threshold is dropped. A conflict with **no** recorded toll is kept, because
+  treating "unknown" as "zero" would silently delete most conflicts.
+- Default is `None` (no filtering).
+
+**Coverage caveat.** In the 2026-10-14 snapshot only 19 of 502 conflicts have
+a `P1120` value, and `min_casualties=1000` removes 4 of them. Until Wikidata's
+casualty coverage improves, this filter barely changes the dataset and cannot
+be used to approximate a COW-style threshold.
 
 ## 2. Belligerents
 
@@ -101,17 +122,19 @@ subtypes), not by changing the base inclusion rule in Section 1.
 ## 5. Missing end dates
 
 A conflict without a recorded `P582` has an unknown duration. HistWarDB
-never hides this: every such participation is flagged `end_imputed = True`,
-and every country-year that is "at war" only because of the imputation is
-flagged `War_Imputed = 1`. The start year itself is always treated as
-observed.
+never hides this. Every such participation is flagged
+`duration_estimated = True`. In the Country × Year grid, every year covered
+by such a conflict is flagged `Duration_Estimated = True`, and every year
+that is "at war" *only* because of the estimate is flagged
+`War_Imputed = 1` (the start year itself counts as observed, and a year also
+covered by a dated conflict is not imputed).
 
 How far an undated conflict is extended is set by the `missing_end`
 parameter:
 
 | `missing_end` | Rule |
 |---|---|
-| `"heuristic"` (default) | Started in 1800 or later: runs to the dataset's `end_year`. Started before 1800: lasts 5 years. |
+| `"heuristic"` (default) | Started in `HEURISTIC_CUTOFF_YEAR` (1800) or later: runs to the dataset's `end_year`. Started earlier: lasts `PRE_CUTOFF_DEFAULT_DURATION_YEARS` (5) years. Both are configurable via `HistWarDB(heuristic_cutoff_year=..., pre_cutoff_duration_years=...)`. |
 | `"open"` | Runs to the dataset's `end_year`, whatever the start year. |
 | `"start_only"` | Counted for its start year only. |
 | `"drop"` | Discarded. |
@@ -119,7 +142,7 @@ parameter:
 Whatever the rule, the extension stops at the belligerent's dissolution
 (Section 6).
 
-The default is a heuristic, not a verified end date. In the 2026-10-13
+The default is a heuristic, not a verified end date. In the 2026-10-14
 snapshot it affects 44 of 1,438 participations and 910 of 12,184 at-war
 country-years. Some of those conflicts are really ongoing; others simply
 have incomplete Wikidata items (for example a "Chilean War of Independence"
@@ -183,7 +206,8 @@ of a snapshot's `participations.csv`.
 | `conflict_name`, `conflict_qid` | Conflict label and Wikidata QID |
 | `start_year`, `end_year` | Years this country is counted as taking part (after clipping) |
 | `war_start_year`, `war_end_year` | The conflict's own first and last year |
-| `end_imputed` | `True` when the conflict has no recorded end date |
+| `duration_estimated` | `True` when the conflict has no recorded end date |
+| `casualties` | Largest recorded death toll of the conflict (`P1120`); usually missing |
 | `country_start`, `country_end` | The country's lifespan; missing when Wikidata has no date |
 
 ### 7.2 Country × Year grid (`view="long"`)
@@ -198,6 +222,7 @@ every country that appears in at least one participation.
 | `Year` | Calendar year |
 | `War_State` | `1` if at least one participation covers the year, else `0` |
 | `Active_Conflicts` | Names of those conflicts, sorted, joined with `"; "` |
+| `Duration_Estimated` | `True` if any active conflict has no recorded end date |
 | `State_Exists` | `0` if the year is outside the country's known lifespan, else `1` |
 | `War_Imputed` | `1` if `War_State` is 1 only through a missing-end-date extension |
 
@@ -208,7 +233,7 @@ this country-year". Combine it with `State_Exists`:
   recorded. This is the closest the data gets to "peace", and it still
   includes wars missing from Wikidata.
 - `State_Exists = 0`: the state did not exist. The cell is not an
-  observation and must be excluded from any denominator. In the 2026-10-13
+  observation and must be excluded from any denominator. In the 2026-10-14
   snapshot this is 97,209 of 141,591 cells.
 
 Pass `only_existing=True` to drop those rows; in the `binary` view they
@@ -237,7 +262,7 @@ Query-time filters are applied to the grid before a view is rendered:
 
 - Data comes from the public Wikidata Query Service. Two kinds of query are
   issued: a participation query per 25-year chunk, then entity queries for
-  labels, lifespans and ISO codes. They are separate because the combined
+  labels, lifespans, ISO codes and death tolls. They are separate because the combined
   query times out on the public endpoint.
 - Each query is retried with exponential backoff. If a chunk still fails,
   the fetch raises `FetchError` (`strict=True`, the default). With
@@ -259,15 +284,16 @@ Query-time filters are applied to the grid before a view is rendered:
   Brecke's Conflict Catalog.
 - `P710` (participant) records participation only. It does not encode
   side/alliance (e.g. Allied vs. Axis), role, or per-participant entry and
-  exit dates, and it is incomplete for major wars: in the 2026-10-13
+  exit dates, and it is incomplete for major wars: in the 2026-10-14
   snapshot World War II has 8 state participants and World War I has 4.
 - A country appears in the grid only if it has at least one recorded
   participation. States never recorded at war are absent, so the grid is not
   a complete state-year panel.
-- No battle-death threshold means the dataset mixes major wars with minor,
-  sparsely documented conflicts, and with items that are not single wars
+- No battle-death threshold by default means the dataset mixes major wars
+  with minor, sparsely documented conflicts, and with items that are not single wars
   (fronts, long-running "conflicts", and occasionally list articles typed
-  as wars).
+  as wars). The optional `min_casualties` filter (Section 1.2) cannot fix
+  this yet, because few conflicts have a recorded death toll.
 - The missing-end-date rule (Section 5) is a stopgap for incomplete upstream
   data and is the largest source of uncertainty below the SPARQL filter
   layer.

@@ -96,6 +96,18 @@ def test_fetch_data_joins_labels_qids_and_iso_codes(sample_participations, sampl
     assert france["conflict_name"] == "World War II"
 
 
+def test_fetch_data_applies_casualty_threshold(sample_participations, sample_entities):
+    session = FakeSession(sample_participations, sample_entities)
+    db = HistWarDB(start_year=1925, end_year=1975, session=session, min_casualties=1000, **FAST)
+    # the conflict query asks for death tolls; the country query does not
+    conflict_query, country_query = session.entity_calls
+    assert "wdt:P1120" in conflict_query
+    assert "wdt:P1120" not in country_query
+    # "Undated War" has a recorded toll of 300 and is dropped
+    assert set(db.participations["conflict_name"]) == {"World War II"}
+    assert db.participations["casualties"].max() == 85_000_000
+
+
 def test_last_chunk_includes_wars_starting_in_end_year(sample_participations, sample_entities):
     session = FakeSession(sample_participations, sample_entities)
     HistWarDB(start_year=1925, end_year=1975, chunk_size=25, session=session, **FAST)

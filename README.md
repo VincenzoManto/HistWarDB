@@ -80,7 +80,7 @@ Wikidata changes every day, so two live fetches can differ. For anything you int
 
 ```python
 # Load the snapshot shipped with the repository (no network access)
-gwd = HistWarDB.from_snapshot("data/snapshots/2026-10-13")
+gwd = HistWarDB.from_snapshot("data/snapshots/2026-10-14")
 
 # Or freeze your own fetch
 gwd = HistWarDB(start_year=1700, end_year=2026)
@@ -100,13 +100,21 @@ HistWarDB(missing_end="open")        # always to the present
 HistWarDB(missing_end="drop")        # discard them
 ```
 
-Whatever the rule, affected rows are flagged (`end_imputed` in the participation table, `War_Imputed` in the panel), so you can filter them out.
+Whatever the rule, affected rows are flagged (`duration_estimated` in the participation table, `Duration_Estimated` and `War_Imputed` in the panel), so you can filter them out. The cutoff year and pre-cutoff duration of the default rule are parameters too (`heuristic_cutoff_year`, `pre_cutoff_duration_years`).
+
+### Severity threshold
+
+```python
+HistWarDB(min_casualties=1000)  # drop conflicts with a recorded death toll below 1,000
+```
+
+Conflicts without a recorded toll (Wikidata `P1120`) are kept. Few conflicts have one, so this filter currently changes little; see the [codebook](CODEBOOK.md#12-optional-severity-threshold-min_casualties).
 
 ---
 
 ## Supported Views (`view` parameter)
 
-* **`"long"`**: tidy DataFrame with `Country`, `Year`, `War_State`, `Active_Conflicts`, `Country_QID`, `ISO3`, `State_Exists`, `War_Imputed`.
+* **`"long"`**: tidy DataFrame with `Country`, `Year`, `War_State`, `Active_Conflicts`, `Duration_Estimated`, `Country_QID`, `ISO3`, `State_Exists`, `War_Imputed`.
 * **`"binary"`**: countries as rows, years as columns, `1` = at war, `0` = no war recorded.
 * **`"names"`**: same shape, with the names of the active conflicts.
 * **`"list"`**: alphabetical list of the conflict names under the current filters.

@@ -31,7 +31,7 @@ def _participation(conflict_qid, country_qid, start, end=None):
     return b
 
 
-def _entity(qid, label=None, inception=None, dissolved=None, iso3=None):
+def _entity(qid, label=None, inception=None, dissolved=None, iso3=None, casualties=None):
     b = {"item": {"value": ENTITY + qid}}
     if label is not None:
         b["itemLabel"] = {"value": label}
@@ -41,6 +41,8 @@ def _entity(qid, label=None, inception=None, dissolved=None, iso3=None):
         b["dissolved"] = {"value": f"{dissolved}-01-01T00:00:00Z"}
     if iso3 is not None:
         b["iso3"] = {"value": iso3}
+    if casualties is not None:
+        b["casualties"] = {"value": str(casualties)}
     return b
 
 
@@ -78,8 +80,12 @@ def sample_participations():
 def sample_entities():
     """Bindings shaped like the entity query's output, keyed by QID."""
     return {
-        "Q362": [_entity("Q362", "World War II")],
-        "Q900": [_entity("Q900", "Undated War")],
+        # Two death-toll estimates: the largest must win.
+        "Q362": [
+            _entity("Q362", "World War II", casualties=60000000),
+            _entity("Q362", "World War II", casualties=85000000),
+        ],
+        "Q900": [_entity("Q900", "Undated War", casualties=300)],
         "Q142": [_entity("Q142", "France", iso3="FRA")],
         "Q145": [_entity("Q145", "United Kingdom", inception=1801, iso3="GBR")],
         # Two inception statements: the earliest must win.

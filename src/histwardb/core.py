@@ -49,15 +49,26 @@ FORCED_MAX_YEARS = {
     "Russian Soviet Federative Socialist Republic": 1991,
 }
 
+# Duration heuristic applied when a conflict has no recorded end date
+# (Wikidata P582). Conflicts starting before ``HEURISTIC_CUTOFF_YEAR`` are
+# assumed to have lasted ``PRE_CUTOFF_DEFAULT_DURATION_YEARS`` years;
+# conflicts starting at or after it are assumed ongoing through the
+# dataset's ``end_year``. Both numbers are deliberately named constants
+# (rather than inline literals) so callers can see and override them --
+# they are rough estimates, not ground truth, and every record built from
+# them is flagged via ``duration_estimated`` instead of being silently
+# indistinguishable from a sourced end date.
+HEURISTIC_CUTOFF_YEAR = 1800
+PRE_CUTOFF_DEFAULT_DURATION_YEARS = 5
+
 VALID_VIEWS = ("long", "binary", "names", "list", "countries", "conflicts")
 
 # How a conflict with no recorded end date (P582) is handled:
-#   "heuristic"  -- ongoing to the dataset end if it started in 1800 or
-#                   later, otherwise assumed to last 5 years (legacy rule);
+#   "heuristic"  -- the cutoff rule above (default);
 #   "open"       -- ongoing to the dataset end, whatever the start year;
 #   "start_only" -- counted for its start year only;
 #   "drop"       -- discarded.
-# Whatever the policy, imputed records are flagged (``end_imputed``).
+# Whatever the policy, estimated records are flagged (``duration_estimated``).
 MISSING_END_POLICIES = ("heuristic", "open", "start_only", "drop")
 
 # QIDs per entity query; keeps the GET URL well under server limits.
@@ -73,7 +84,8 @@ RECORD_COLUMNS = [
     "end_year",
     "war_start_year",
     "war_end_year",
-    "end_imputed",
+    "duration_estimated",
+    "casualties",
     "country_start",
     "country_end",
 ]
@@ -83,6 +95,7 @@ LONG_COLUMNS = [
     "Year",
     "War_State",
     "Active_Conflicts",
+    "Duration_Estimated",
     "Country_QID",
     "ISO3",
     "State_Exists",
@@ -118,7 +131,13 @@ def qid_from_uri(uri: Optional[str]) -> Optional[str]:
     return uri.rsplit("/", 1)[-1]
 
 
-def impute_end_year(start_year: int, dataset_end_year: int, missing_end: str = "heuristic") -> Optional[int]:
+def impute_end_year(
+    start_year: int,
+    dataset_end_year: int,
+    missing_end: str = "heuristic",
+    heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
+    pre_cutoff_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
+) -> Optional[int]:
     """End year assigned to a conflict that has no recorded end date.
 
     Returns ``None`` when the policy is to drop such conflicts.
@@ -131,7 +150,16 @@ def impute_end_year(start_year: int, dataset_end_year: int, missing_end: str = "
         return start_year
     if missing_end == "open":
         return dataset_end_year
-    return dataset_end_year if start_year >= 1800 else (start_year + 5)
+    if start_year >= heuristic_cutoff_year:
+        return dataset_end_year
+    return start_year + pre_cutoff_duration_years
+
+
+def _parse_number(value: Optional[str]) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _make_record(
@@ -145,15 +173,20 @@ def _make_record(
     finish_year: Optional[int],
     country_start: Optional[int],
     country_end: Optional[int],
+    casualties: Optional[float],
     dataset_end_year: int,
     missing_end: str,
+    heuristic_cutoff_year: int,
+    pre_cutoff_duration_years: int,
 ) -> Optional[dict]:
     if start_year is None:
         return None
 
-    end_imputed = finish_year is None
-    if end_imputed:
-        finish_year = impute_end_year(start_year, dataset_end_year, missing_end)
+    duration_estimated = finish_year is None
+    if duration_estimated:
+        finish_year = impute_end_year(
+            start_year, dataset_end_year, missing_end, heuristic_cutoff_year, pre_cutoff_duration_years
+        )
         if finish_year is None:
             return None
     else:
@@ -167,19 +200,32 @@ def _make_record(
         "conflict_qid": conflict_qid,
         "start_year": start_year,
         "end_year": finish_year,
-        "end_imputed": end_imputed,
+        "duration_estimated": duration_estimated,
+        "casualties": casualties,
         "country_start": country_start,
         "country_end": country_end,
     }
 
 
-def parse_bindings(bindings: Iterable[dict], end_year: int, missing_end: str = "heuristic") -> list[dict]:
+def parse_bindings(
+    bindings: Iterable[dict],
+    end_year: int,
+    heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
+    pre_cutoff_default_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
+    missing_end: str = "heuristic",
+) -> list[dict]:
     """Turn flat SPARQL JSON ``bindings`` into conflict/country records.
 
     "Flat" means one binding carries the labels and the country lifespan
     alongside the dates (``countryLabel``, ``conflictLabel``, ``startDate``,
     and optionally ``endDate``, ``countryStart``, ``countryEnd``,
-    ``countryEndFallback``, ``country``, ``conflict``, ``iso3``).
+    ``countryEndFallback``, ``country``, ``conflict``, ``iso3``,
+    ``casualties``).
+
+    When a conflict has no recorded end date, its duration is estimated
+    according to ``missing_end`` (see :func:`impute_end_year`); such records
+    are flagged via ``duration_estimated=True`` rather than silently
+    presented as sourced data.
     """
     records: list[dict] = []
     for item in bindings:
@@ -201,8 +247,11 @@ def parse_bindings(bindings: Iterable[dict], end_year: int, missing_end: str = "
             finish_year=parse_year(raw_end) if raw_end else None,
             country_start=parse_year(item["countryStart"]["value"]) if "countryStart" in item else None,
             country_end=country_end,
+            casualties=_parse_number(item["casualties"]["value"]) if "casualties" in item else None,
             dataset_end_year=end_year,
             missing_end=missing_end,
+            heuristic_cutoff_year=heuristic_cutoff_year,
+            pre_cutoff_duration_years=pre_cutoff_default_duration_years,
         )
         if record is not None:
             records.append(record)
@@ -214,13 +263,17 @@ def parse_entities(bindings: Iterable[dict]) -> dict[str, dict]:
 
     Multi-valued properties are reduced deterministically: the earliest
     inception, the latest dissolution (``P576``, falling back to ``P582``
-    only when no ``P576`` exists), and the alphabetically first ISO code.
-    An entity with no English label is labelled with its QID.
+    only when no ``P576`` exists), the alphabetically first ISO code, and
+    the largest recorded death toll (``P1120`` often carries several
+    estimates; the largest keeps a severity filter conservative). An entity
+    with no English label is labelled with its QID.
     """
     raw: dict[str, dict] = {}
     for item in bindings:
         qid = qid_from_uri(item["item"]["value"])
-        entry = raw.setdefault(qid, {"label": None, "starts": [], "ends": [], "fallback_ends": [], "iso3": []})
+        entry = raw.setdefault(
+            qid, {"label": None, "starts": [], "ends": [], "fallback_ends": [], "iso3": [], "casualties": []}
+        )
         if "itemLabel" in item and entry["label"] is None:
             entry["label"] = item["itemLabel"]["value"]
         for key, bucket in (("inception", "starts"), ("dissolved", "ends"), ("endTime", "fallback_ends")):
@@ -229,6 +282,9 @@ def parse_entities(bindings: Iterable[dict]) -> dict[str, dict]:
                 entry[bucket].append(year)
         if "iso3" in item:
             entry["iso3"].append(item["iso3"]["value"])
+        casualties = _parse_number(item["casualties"]["value"]) if "casualties" in item else None
+        if casualties is not None:
+            entry["casualties"].append(casualties)
 
     entities: dict[str, dict] = {}
     for qid, entry in raw.items():
@@ -238,6 +294,7 @@ def parse_entities(bindings: Iterable[dict]) -> dict[str, dict]:
             "start": min(entry["starts"]) if entry["starts"] else None,
             "end": max(ends) if ends else None,
             "iso3": min(entry["iso3"]) if entry["iso3"] else None,
+            "casualties": max(entry["casualties"]) if entry["casualties"] else None,
         }
     return entities
 
@@ -248,6 +305,8 @@ def build_records(
     countries: dict[str, dict],
     end_year: int,
     missing_end: str = "heuristic",
+    heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
+    pre_cutoff_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
 ) -> list[dict]:
     """Join participation-query bindings with entity metadata into records."""
     records: list[dict] = []
@@ -268,8 +327,11 @@ def build_records(
             finish_year=parse_year(raw_end) if raw_end else None,
             country_start=country.get("start"),
             country_end=country.get("end"),
+            casualties=conflict.get("casualties"),
             dataset_end_year=end_year,
             missing_end=missing_end,
+            heuristic_cutoff_year=heuristic_cutoff_year,
+            pre_cutoff_duration_years=pre_cutoff_duration_years,
         )
         if record is not None:
             records.append(record)
@@ -279,15 +341,17 @@ def build_records(
 def _with_record_defaults(df: pd.DataFrame) -> pd.DataFrame:
     """Fill in the optional record columns so older 6-column records still work."""
     df = df.copy()
-    for column, default in (("country_qid", None), ("conflict_qid", None), ("iso3", None), ("end_imputed", False)):
+    defaults = {"country_qid": None, "conflict_qid": None, "iso3": None, "duration_estimated": False, "casualties": None}
+    for column, default in defaults.items():
         if column not in df.columns:
             df[column] = default
     # Without a QID the label is the only identity available.
     df["country_qid"] = df["country_qid"].where(df["country_qid"].notna(), df["country"])
     df["conflict_qid"] = df["conflict_qid"].where(df["conflict_qid"].notna(), df["conflict_name"])
-    df["end_imputed"] = df["end_imputed"].astype(bool)
+    df["duration_estimated"] = df["duration_estimated"].astype(bool)
     df["country_start"] = pd.to_numeric(df["country_start"], errors="coerce")
     df["country_end"] = pd.to_numeric(df["country_end"], errors="coerce")
+    df["casualties"] = pd.to_numeric(df["casualties"], errors="coerce")
     return df
 
 
@@ -299,19 +363,28 @@ def _disambiguate_labels(df: pd.DataFrame, label_col: str, qid_col: str) -> pd.D
     return df
 
 
-def clean_dataframe(df_raw: pd.DataFrame, start_year: int, end_year: int) -> pd.DataFrame:
+def clean_dataframe(
+    df_raw: pd.DataFrame,
+    start_year: int,
+    end_year: int,
+    min_casualties: Optional[float] = None,
+) -> pd.DataFrame:
     """Turn raw records into one clean row per (conflict, country) participation.
 
     Pure function: no network access, safe to unit test with synthetic
     DataFrames. Steps:
 
     1. drop countries whose label is an unresolved QID;
-    2. reduce each country to one lifespan (earliest start, latest end,
+    2. when ``min_casualties`` is set, drop conflicts whose *recorded* death
+       toll (Wikidata P1120) is below it -- conflicts with no recorded toll
+       are kept, since Wikidata's coverage of casualty figures is too sparse
+       to treat "unknown" as "zero";
+    3. reduce each country to one lifespan (earliest start, latest end,
        capped by :data:`FORCED_MAX_YEARS`);
-    3. reduce each (conflict, country) pair to one interval;
-    4. clip that interval to the country's lifespan and drop it if nothing
+    4. reduce each (conflict, country) pair to one interval;
+    5. clip that interval to the country's lifespan and drop it if nothing
        is left;
-    5. drop intervals entirely outside ``[start_year, end_year]``.
+    6. drop intervals entirely outside ``[start_year, end_year]``.
 
     ``start_year``/``end_year`` in the result are the clipped participation
     years; ``war_start_year``/``war_end_year`` keep the conflict's own dates.
@@ -324,6 +397,11 @@ def clean_dataframe(df_raw: pd.DataFrame, start_year: int, end_year: int) -> pd.
     if df.empty:
         return pd.DataFrame(columns=RECORD_COLUMNS)
 
+    if min_casualties is not None:
+        df = df[df["casualties"].isna() | (df["casualties"] >= min_casualties)]
+        if df.empty:
+            return pd.DataFrame(columns=RECORD_COLUMNS)
+
     # One lifespan per country, even when Wikidata lists several dates.
     lifespans = df.groupby("country_qid").agg(
         country_start=("country_start", "min"),
@@ -334,7 +412,7 @@ def clean_dataframe(df_raw: pd.DataFrame, start_year: int, end_year: int) -> pd.
 
     # One interval per participation. A recorded end date always beats an
     # imputed one.
-    df = df.assign(_observed_end=df["end_year"].where(~df["end_imputed"]))
+    df = df.assign(_observed_end=df["end_year"].where(~df["duration_estimated"]))
     parts = (
         df.groupby(["conflict_qid", "country_qid"], sort=True)
         .agg(
@@ -344,7 +422,8 @@ def clean_dataframe(df_raw: pd.DataFrame, start_year: int, end_year: int) -> pd.
             war_start_year=("start_year", "min"),
             _observed_end=("_observed_end", "max"),
             _any_end=("end_year", "max"),
-            end_imputed=("end_imputed", "all"),
+            duration_estimated=("duration_estimated", "all"),
+            casualties=("casualties", "max"),
         )
         .reset_index()
     )
@@ -376,23 +455,30 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
 
     Besides ``War_State`` and ``Active_Conflicts`` each cell carries:
 
+    * ``Duration_Estimated`` -- ``True`` when at least one active conflict
+      has no recorded end date, so its duration was estimated;
     * ``State_Exists`` -- 0 when the year is outside the state's known
       lifespan, so "no war" can be told apart from "no state";
-    * ``War_Imputed`` -- 1 when the cell is at war only because a conflict
-      with no recorded end date was extended past its start year.
+    * ``War_Imputed`` -- 1 when the cell is at war *only* because a
+      conflict with no recorded end date was extended past its start year
+      (stricter than ``Duration_Estimated``: a cell also covered by a dated
+      conflict, or in the start year itself, is 0).
     """
     if df_clean.empty:
         return pd.DataFrame(columns=LONG_COLUMNS)
 
     active: dict[tuple, set] = {}
     observed: set[tuple] = set()
+    estimated: set[tuple] = set()
     for row in df_clean.itertuples(index=False):
         first = max(row.start_year, start_year)
         last = min(row.end_year, end_year)
         for year in range(first, last + 1):
             key = (row.country_qid, year)
             active.setdefault(key, set()).add(row.conflict_name)
-            if not row.end_imputed or year == row.war_start_year:
+            if row.duration_estimated:
+                estimated.add(key)
+            if not row.duration_estimated or year == row.war_start_year:
                 observed.add(key)
 
     countries = df_clean.drop_duplicates("country_qid").sort_values("country")
@@ -410,6 +496,7 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
                     "Year": year,
                     "War_State": 1 if names else 0,
                     "Active_Conflicts": "; ".join(sorted(names)) if names else "",
+                    "Duration_Estimated": key in estimated,
                     "Country_QID": country.country_qid,
                     "ISO3": country.iso3,
                     "State_Exists": 1 if exists else 0,
@@ -453,6 +540,18 @@ class HistWarDB:
     missing_end:
         Policy for conflicts with no recorded end date; one of
         :data:`MISSING_END_POLICIES`.
+    heuristic_cutoff_year, pre_cutoff_duration_years:
+        Tune the ``"heuristic"`` policy: conflicts starting before
+        ``heuristic_cutoff_year`` are assumed to last
+        ``pre_cutoff_duration_years`` years; conflicts starting on/after it
+        are assumed to run through ``end_year``. Records built from this
+        fallback are flagged (``duration_estimated`` / ``Duration_Estimated``).
+    min_casualties:
+        Optional minimum recorded death toll (Wikidata P1120). Conflicts
+        with a recorded toll below this value are excluded, which is the
+        knob for not treating a two-day skirmish the same as a world war.
+        Conflicts with no recorded toll are kept (``None`` by default:
+        no severity filtering).
     strict:
         When ``True`` (default) a chunk that still fails after all retries
         raises :class:`FetchError`. When ``False`` the chunk is skipped with
@@ -476,6 +575,9 @@ class HistWarDB:
         chunk_size: int = 25,
         session: Optional[requests.Session] = None,
         auto_fetch: bool = True,
+        min_casualties: Optional[float] = None,
+        heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
+        pre_cutoff_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
         missing_end: str = "heuristic",
         strict: bool = True,
         max_retries: int = 3,
@@ -493,6 +595,9 @@ class HistWarDB:
         )
         self.chunk_size = chunk_size
         self.session = session or requests
+        self.min_casualties = min_casualties
+        self.heuristic_cutoff_year = heuristic_cutoff_year
+        self.pre_cutoff_duration_years = pre_cutoff_duration_years
         self.missing_end = missing_end
         self.strict = strict
         self.max_retries = max_retries
@@ -554,12 +659,15 @@ class HistWarDB:
             )
         return bindings
 
-    def _fetch_entities(self, qids: Sequence[str], with_lifespan: bool) -> dict[str, dict]:
-        """Fetch labels (and lifespans) for ``qids`` in batches."""
+    def _fetch_entities(
+        self, qids: Sequence[str], with_lifespan: bool, with_casualties: bool = False
+    ) -> dict[str, dict]:
+        """Fetch labels (and lifespans or death tolls) for ``qids`` in batches."""
         bindings: list[dict] = []
         for i in range(0, len(qids), ENTITY_BATCH_SIZE):
             batch = qids[i : i + ENTITY_BATCH_SIZE]
-            bindings.extend(self._request(build_entity_query(batch, with_lifespan=with_lifespan)))
+            query = build_entity_query(batch, with_lifespan=with_lifespan, with_casualties=with_casualties)
+            bindings.extend(self._request(query))
         return parse_entities(bindings)
 
     def fetch_data(self) -> None:
@@ -585,11 +693,20 @@ class HistWarDB:
 
         conflict_qids = sorted({qid_from_uri(p["conflict"]["value"]) for p in participations})
         country_qids = sorted({qid_from_uri(p["country"]["value"]) for p in participations})
-        conflicts = self._fetch_entities(conflict_qids, with_lifespan=False)
+        conflicts = self._fetch_entities(conflict_qids, with_lifespan=False, with_casualties=True)
         countries = self._fetch_entities(country_qids, with_lifespan=True)
 
         self.retrieved_at = datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds")
-        self.load_records(build_records(participations, conflicts, countries, self.end_year, self.missing_end))
+        records = build_records(
+            participations,
+            conflicts,
+            countries,
+            self.end_year,
+            missing_end=self.missing_end,
+            heuristic_cutoff_year=self.heuristic_cutoff_year,
+            pre_cutoff_duration_years=self.pre_cutoff_duration_years,
+        )
+        self.load_records(records)
 
     def load_records(self, records: list[dict]) -> None:
         """Build the dataset from a list of flat conflict/country records.
@@ -603,7 +720,9 @@ class HistWarDB:
             return
 
         df_raw = pd.DataFrame(records)
-        self.df_records = clean_dataframe(df_raw, self.start_year, self.end_year)
+        self.df_records = clean_dataframe(
+            df_raw, self.start_year, self.end_year, min_casualties=self.min_casualties
+        )
         self.df_long = build_long_grid(self.df_records, self.start_year, self.end_year)
 
     # -- Snapshots -----------------------------------------------------------
@@ -633,6 +752,9 @@ class HistWarDB:
             "end_year": self.end_year,
             "chunk_size": self.chunk_size,
             "missing_end": self.missing_end,
+            "heuristic_cutoff_year": self.heuristic_cutoff_year,
+            "pre_cutoff_duration_years": self.pre_cutoff_duration_years,
+            "min_casualties": self.min_casualties,
             "failed_chunks": [list(c) for c in self.failed_chunks],
             "conflict_class": CONFLICT_CLASS,
             "excluded_conflict_classes": list(EXCLUDED_CONFLICT_CLASSES),
@@ -644,7 +766,7 @@ class HistWarDB:
             "n_participations": len(self.df_records),
             "n_conflicts": int(self.df_records["conflict_qid"].nunique()),
             "n_countries": int(self.df_records["country_qid"].nunique()),
-            "n_end_imputed": int(self.df_records["end_imputed"].sum()),
+            "n_duration_estimated": int(self.df_records["duration_estimated"].sum()),
             "files": {SNAPSHOT_DATA_FILE: {"sha256_lf": _sha256_normalized(data_path)}},
         }
         (directory / SNAPSHOT_METADATA_FILE).write_text(
@@ -673,6 +795,9 @@ class HistWarDB:
             end_year=metadata["end_year"],
             chunk_size=metadata["chunk_size"],
             missing_end=metadata["missing_end"],
+            heuristic_cutoff_year=metadata.get("heuristic_cutoff_year", HEURISTIC_CUTOFF_YEAR),
+            pre_cutoff_duration_years=metadata.get("pre_cutoff_duration_years", PRE_CUTOFF_DEFAULT_DURATION_YEARS),
+            min_casualties=metadata.get("min_casualties"),
             auto_fetch=False,
         )
         db.retrieved_at = metadata.get("retrieved_at")
