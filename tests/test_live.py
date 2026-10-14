@@ -14,6 +14,7 @@ import requests
 from histwardb import HistWarDB
 from histwardb.core import parse_entities
 from histwardb.query import (
+    COALITION_CLASSES,
     CONFLICT_CLASS,
     COUNTRY_TYPES,
     DEFAULT_USER_AGENT,
@@ -28,6 +29,12 @@ EXPECTED_LABELS = {
     "Q198": "war",
     "Q20082270": "peacekeeping mission",
     "Q357104": "military exercise",
+    "Q124042044": "hypothetical war",
+    "Q2661982": "interstellar war",
+    "Q17198419": "fictional war",
+    "Q878249": "alliance",
+    "Q1127126": "military alliance",
+    "Q100906234": "multinational military coalition",
     "Q3624078": "sovereign state",
     "Q3024240": "historical country",
     "Q6256": "country",
@@ -35,7 +42,7 @@ EXPECTED_LABELS = {
 
 
 def test_qid_constants_mean_what_the_code_says():
-    used = {q.split(":")[1] for q in (CONFLICT_CLASS, *EXCLUDED_CONFLICT_CLASSES, *COUNTRY_TYPES)}
+    used = {q.split(":")[1] for q in (CONFLICT_CLASS, *EXCLUDED_CONFLICT_CLASSES, *COUNTRY_TYPES, *COALITION_CLASSES)}
     assert used == set(EXPECTED_LABELS)
 
     response = requests.get(
@@ -62,3 +69,8 @@ def test_canonical_wars_and_states_are_returned():
     # ordinary sovereign states must survive the belligerent filters
     assert {"Q145", "Q30"} <= countries  # United Kingdom, United States
     assert len(db.participations) > 50
+
+    # coalition expansion gives World War II sides
+    wwii = db.participations[db.participations["conflict_qid"] == "Q362"]
+    assert {"Allies of World War II", "Axis Powers"} <= set(wwii["side"].dropna())
+    assert not db.dyads.empty

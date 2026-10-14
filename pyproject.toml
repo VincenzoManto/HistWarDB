@@ -28,6 +28,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.5",
+    "rdflib>=6",
 ]
 
 [project.urls]
@@ -37,6 +38,9 @@ Issues = "https://github.com/VincenzoManto/histwardb/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+histwardb = ["data/*.csv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
