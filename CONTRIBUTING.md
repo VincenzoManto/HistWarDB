@@ -42,6 +42,23 @@ db.save_snapshot("data/snapshots/YYYY-MM-DD")
 Commit the new directory. `tests/test_snapshot_data.py` checks every shipped
 snapshot's checksum and invariants.
 
+## Crosswalk and validation
+
+Both scripts need reference data that HistWarDB does not redistribute
+(Correlates of War, Gleditsch-Ward, UCDP/PRIO); download links are in each
+script's docstring.
+
+```bash
+# Rebuild the COW / Gleditsch-Ward crosswalk for the states in a snapshot
+python scripts/build_crosswalk.py data/snapshots/YYYY-MM-DD states2016.csv iisystem.dat     src/histwardb/data/crosswalk.csv
+
+# Regenerate validation/report.md
+python scripts/validate.py data/snapshots/YYYY-MM-DD src/histwardb/data/crosswalk.csv     Inter-StateWarData_v4.0.csv Extra-StateWarData_v4.0.csv UcdpPrioConflict_v25_1.csv validation
+```
+
+Review every new automatic match in the crosswalk before committing it, and
+add hand-checked assignments to `MANUAL` in the builder.
+
 ## Linting
 
 ```bash

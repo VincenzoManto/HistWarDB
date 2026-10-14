@@ -15,9 +15,13 @@ threshold: HistWarDB inherits Wikidata's own inclusion criteria rather than
 imposing a COW-style battle-death cutoff. This is a deliberate scope choice that trades
 precision for coverage across under-documented historical conflicts.
 
-Items that are not typed under `war` are out of scope even when they describe
-wars. The best-known case is "series of wars" items such as the Napoleonic
-Wars.
+Wikidata's class tree decides what is in scope, and it is broader than a
+war list would be. In the 2026-10-14 snapshot, 42 of the 502 conflicts are
+typed "series of wars" (e.g. Balkan Wars, Anglo-Burmese Wars, American
+Indian Wars), which Wikidata treats as a subclass of war. They overlap the
+individual wars they group. Filter on
+`conflict_type` to drop them when counting wars. Conversely, a war item that
+lacks `P580` (start time) or a state participant is not retrieved at all.
 
 ### 1.1 Exclusions
 
@@ -28,6 +32,38 @@ of:
 |---|---|---|
 | Peacekeeping mission | `wd:Q20082270` | Not a belligerent conflict |
 | Military exercise | `wd:Q357104` | Simulated, not actual combat |
+| Hypothetical war | `wd:Q124042044` | Did not happen |
+| Interstellar war | `wd:Q2661982` | Fiction (e.g. "Space War I") |
+| Fictional war | `wd:Q17198419` | Fiction |
+
+The broader class "fictional entity" cannot be used: excluding it would make
+the query enumerate every fictional item in Wikidata and time out.
+
+### 1.3 Conflict structure (`conflict_type`, parents, roots)
+
+- `conflict_type` lists the conflict's own Wikidata classes (`P31`, English
+  labels joined with `"; "`), e.g. `war`, `civil war`, `world war`,
+  `war of independence`, `colonial war`. It is descriptive only: the base
+  inclusion rule in Section 1 does not depend on it.
+- Many conflicts are recorded as part of (`P361`) another war: fronts,
+  campaigns, phases. HistWarDB follows `P361` chains (through non-war items
+  such as theatres, up to 8 levels) and records:
+  - `parent_conflict_qid`: the nearest ancestor that is itself a war;
+  - `root_conflict_qid` / `root_conflict_name`: the topmost such ancestor, or
+    the conflict itself when it has none.
+  Items typed "series of wars" (e.g. Napoleonic Wars, German–Russian wars)
+  are never parents or roots, because they group wars that are separate
+  units of analysis.
+- `subconflicts=` decides how sub-conflicts are counted:
+
+| `subconflicts` | Effect |
+|---|---|
+| `"keep"` (default) | A front and its war are separate conflicts. A state fighting on a front is counted in both. |
+| `"drop"` | Sub-conflicts whose root war is in the dataset are dropped. |
+| `"roll_up"` | Sub-conflict participations are re-attributed to the root war. This also recovers states that Wikidata lists only on a front or campaign. |
+
+`"roll_up"` is the closest to COW's unit of analysis (one war per
+belligerent per period) and is recommended for counts of wars.
 
 ### 1.2 Optional severity threshold (`min_casualties`)
 
@@ -87,6 +123,49 @@ Wikidata has one; historical states mostly do not.
 Successor states are **not** merged: `Russian Empire`, `Soviet Union` and
 `Russia` are three belligerents.
 
+### 2.3 Correlates of War and Gleditsch–Ward codes
+
+Wikidata has no property for COW or Gleditsch–Ward codes, so HistWarDB ships
+its own crosswalk ([`src/histwardb/data/crosswalk.csv`](src/histwardb/data/crosswalk.csv),
+built by [`scripts/build_crosswalk.py`](scripts/build_crosswalk.py)) and adds
+`cow_code` / `gw_code` to each participation and `COW_Code` / `GW_Code` to the
+grid:
+
+- historical predecessors are assigned by hand to the system member they are
+  coded as (e.g. Kingdom of Prussia, German Empire, Nazi Germany → COW 255;
+  Ottoman Empire → 640; Kingdom of Sardinia → 325; Qing dynasty → 710);
+- other states are matched when their English label or an alias equals a
+  COW / G-W state name and their lifespans overlap;
+- states that were never members of the interstate system (colonies,
+  protectorates, sub-national and most pre-1816 states) have no code.
+
+Several QIDs can share a code (France's successive regimes are all COW 220).
+A code does not imply the state was a system member in every year it appears.
+
+### 2.4 Sides, coalitions and roles
+
+`P710` records participation only. Two other sources give more:
+
+- **Coalitions.** When a participant is an alliance (`wd:Q878249`, military
+  alliance `wd:Q1127126`, multinational military coalition `wd:Q100906234`, or
+  a subclass), its member states (`P527` on the coalition, or `P463` on the
+  state) are added as participants with `via_coalition = True`, and every
+  member gets `side` / `side_qid` = that coalition. A direct participant that
+  is also a member gets the coalition as its side. A state listed in two
+  coalitions of the same conflict gets both, joined with `"; "`, and is left
+  out of the dyads. Coalition members get the conflict's dates; Wikidata's
+  membership dates are not used.
+- **Qualifiers.** `role` holds the `P3831` (object has role) labels recorded on
+  the `P710` statement (e.g. "aggressor", "defender"), and `P580` / `P582`
+  qualifiers clip that state's participation to its own entry and exit years.
+
+`dyads` lists every pair of states on different single known sides of the
+same conflict, with the years their participations overlap.
+
+These sources are sparse: most wars have no coalition participant and no
+qualifiers, so most participations have no side. Section 9 gives the
+coverage.
+
 ## 3. Entry and exit dates (temporal scope)
 
 - **Conflict start**: `P580` (start time) — required. Conflicts without a
@@ -143,7 +222,7 @@ Whatever the rule, the extension stops at the belligerent's dissolution
 (Section 6).
 
 The default is a heuristic, not a verified end date. In the 2026-10-14
-snapshot it affects 44 of 1,438 participations and 910 of 12,184 at-war
+snapshot it affects 44 of 1,500 participations and 910 of 12,520 at-war
 country-years. Some of those conflicts are really ongoing; others simply
 have incomplete Wikidata items (for example a "Chilean War of Independence"
 item with a start date of 1827 and no end). For analysis, either filter on
@@ -208,6 +287,12 @@ of a snapshot's `participations.csv`.
 | `war_start_year`, `war_end_year` | The conflict's own first and last year |
 | `duration_estimated` | `True` when the conflict has no recorded end date |
 | `casualties` | Largest recorded death toll of the conflict (`P1120`); usually missing |
+| `conflict_type` | The conflict's Wikidata classes (Section 1.3) |
+| `parent_conflict_qid`, `root_conflict_qid`, `root_conflict_name` | Part-of structure (Section 1.3) |
+| `side`, `side_qid` | Coalition side, when known (Section 2.4) |
+| `via_coalition` | `True` when the state is listed only through a coalition |
+| `role` | `P3831` role qualifiers on the participation |
+| `cow_code`, `gw_code` | Correlates of War / Gleditsch–Ward codes (Section 2.3) |
 | `country_start`, `country_end` | The country's lifespan; missing when Wikidata has no date |
 
 ### 7.2 Country × Year grid (`view="long"`)
@@ -218,7 +303,7 @@ every country that appears in at least one participation.
 
 | Column | Meaning |
 |---|---|
-| `Country`, `Country_QID`, `ISO3` | Belligerent |
+| `Country`, `Country_QID`, `ISO3`, `COW_Code`, `GW_Code` | Belligerent |
 | `Year` | Calendar year |
 | `War_State` | `1` if at least one participation covers the year, else `0` |
 | `Active_Conflicts` | Names of those conflicts, sorted, joined with `"; "` |
@@ -234,12 +319,20 @@ this country-year". Combine it with `State_Exists`:
   includes wars missing from Wikidata.
 - `State_Exists = 0`: the state did not exist. The cell is not an
   observation and must be excluded from any denominator. In the 2026-10-14
-  snapshot this is 97,209 of 141,591 cells.
+  snapshot this is 100,803 of 145,515 cells.
 
 Pass `only_existing=True` to drop those rows; in the `binary` view they
 then read `<NA>` instead of `0`.
 
-### 7.3 Derived views
+### 7.3 Conflict and dyad tables
+
+- `HistWarDB.conflicts`: one row per conflict with `conflict_type`, parent and
+  root war, first and last year, `duration_estimated`, `casualties`,
+  `n_states` and `n_states_with_side`.
+- `HistWarDB.dyads`: one row per pair of states on opposing known sides of a
+  conflict (`country_a`, `side_a`, `country_b`, `side_b`, overlap years).
+
+### 7.4 Derived views
 
 | View | Derivation |
 |---|---|
@@ -280,12 +373,21 @@ Query-time filters are applied to the grid before a view is rendered:
 
 - Coverage and accuracy are bounded by Wikidata's own curation; HistWarDB
   does not independently verify fatality counts, dates, or belligerent lists.
-  It has not yet been validated against Correlates of War, UCDP/PRIO or
-  Brecke's Conflict Catalog.
-- `P710` (participant) records participation only. It does not encode
-  side/alliance (e.g. Allied vs. Axis), role, or per-participant entry and
-  exit dates, and it is incomplete for major wars: in the 2026-10-14
-  snapshot World War II has 8 state participants and World War I has 4.
+  Agreement with Correlates of War and UCDP/PRIO is measured in
+  [`validation/report.md`](validation/report.md): for the 2026-10-14 snapshot,
+  79% of COW inter-state wars are matched (62% of those starting before 1900),
+  and 90% of COW inter-state war-years are also at war in HistWarDB. It has not
+  been compared with Brecke's Conflict Catalog or COW intra-state wars.
+- Belligerent lists are incomplete for major wars. Coalition expansion brings
+  World War II to 35 states and World War I to 16 (46 and 26 with
+  `subconflicts="roll_up"`); COW codes 25 and 15 system members.
+- Sides are known only where Wikidata lists a coalition as a participant: 84
+  of 1,500 participations, in 6 conflicts, and dyads exist only for the two
+  world wars. Where both sources code a side, they agree with COW on all 185
+  comparable state pairs. Coalition members get the whole war's dates, so a
+  state that joined late (e.g. the United States in 1941) is counted from the
+  war's start unless a `P580` qualifier says otherwise. Role qualifiers are
+  recorded on 7 participations only.
 - A country appears in the grid only if it has at least one recorded
   participation. States never recorded at war are absent, so the grid is not
   a complete state-year panel.
