@@ -8,4 +8,4 @@ FastWikidataWarDataset = HistWarDB
 
 __all__ = ["FastWikidataWarDataset", "FetchError", "HistWarDB", "build_entity_query", "build_sparql_query"]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

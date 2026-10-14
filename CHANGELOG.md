@@ -3,7 +3,10 @@
 All notable changes to HistWarDB. Data snapshots are listed under the
 release that first ships them.
 
-## Unreleased
+## 0.4.0 - 2026-10-14
+
+First release whose live fetch works end to end; 0.3.0 returns an empty
+dataset (see "Fixed"). Ships snapshot `data/snapshots/2026-10-14`.
 
 ### Added
 - Conflict structure (#3): `conflict_type` (Wikidata classes), `parent_conflict_qid`
@@ -26,6 +29,9 @@ release that first ships them.
   longer times out; retries and `FetchError`; lifespan clipping; QIDs and ISO
   codes; `State_Exists` and `War_Imputed`; snapshots with checksums; opt-in
   live tests (#2, #4-#10, #13).
+
+- `series_of_wars=` option (`keep`, `drop`) for items typed "series of
+  wars", which Wikidata makes a subclass of war (#3).
 
 ### Changed
 - Hypothetical, interstellar and fictional wars are excluded (Wikidata types
