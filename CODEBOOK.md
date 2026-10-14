@@ -9,10 +9,29 @@ whenever those rules change.
 ## 1. Unit of analysis
 
 A **conflict** is any Wikidata item that is an instance of, or subclass of,
-`war` (`wd:Q198`). There is no minimum-fatality threshold: HistWarDB inherits
-Wikidata's own inclusion criteria rather than imposing a COW-style battle-death
-cutoff. This is a deliberate scope choice that trades precision for coverage
-across under-documented historical conflicts.
+`war` (`wd:Q198`). By default there is no minimum-fatality threshold:
+HistWarDB inherits Wikidata's own inclusion criteria rather than imposing a
+COW-style battle-death cutoff. This is a deliberate scope choice that trades
+precision for coverage across under-documented historical conflicts.
+
+### 1.2 Optional severity threshold (`min_casualties`)
+
+Because "no threshold" mixes a world war with a two-day, zero-impact local
+rebellion on the same analytical plane, callers can opt into a minimum
+severity filter via `HistWarDB(min_casualties=...)` (see
+[`clean_dataframe`](src/histwardb/core.py)):
+
+- The query fetches each conflict's recorded death toll via Wikidata property
+  `P1120` (`CASUALTIES_PROPERTY` in
+  [`query.py`](src/histwardb/query.py)), as an `OPTIONAL` triple — a
+  conflict is never dropped merely for lacking this field.
+- When `min_casualties` is set, a conflict whose *recorded* `P1120` value is
+  below the threshold is dropped. A conflict with **no** recorded value is
+  kept regardless, because Wikidata's casualty-figure coverage is too sparse
+  to treat "unknown" as "zero" — doing so would silently delete most
+  pre-modern conflicts.
+- Default is `None` (no filtering), matching prior behavior exactly; this is
+  an opt-in refinement, not a change to the base inclusion rule in Section 1.
 
 ### 1.1 Exclusions
 
@@ -80,18 +99,28 @@ A conflict without a recorded `P582` (end time) is not treated as
 indefinitely ongoing when building per-record `end_year`
 ([`parse_bindings`](src/histwardb/core.py)):
 
-- If `start_year >= 1800`: the conflict is assumed to run through the
-  dataset's `end_year` (i.e. still open/contemporary enough that Wikidata's
-  silence plausibly means "ongoing or recently closed, not yet dated").
-- If `start_year < 1800`: the conflict is assumed to last 5 years
-  (`start_year + 5`), a deliberately short default so that a single
-  undated pre-1800 record cannot inflate a historical state's "at war" years
-  across centuries.
+- If `start_year >= HEURISTIC_CUTOFF_YEAR` (default `1800`): the conflict is
+  assumed to run through the dataset's `end_year` (i.e. still
+  open/contemporary enough that Wikidata's silence plausibly means "ongoing
+  or recently closed, not yet dated").
+- If `start_year < HEURISTIC_CUTOFF_YEAR`: the conflict is assumed to last
+  `PRE_CUTOFF_DEFAULT_DURATION_YEARS` years (default `5`, i.e.
+  `start_year + 5`), a deliberately short default so that a single undated
+  pre-1800 record cannot inflate a historical state's "at war" years across
+  centuries.
+
+Both the cutoff year and the default duration are named constants in
+[`core.py`](src/histwardb/core.py) and are configurable per-instance via
+`HistWarDB(heuristic_cutoff_year=..., pre_cutoff_duration_years=...)` — they
+are rough, overridable estimates, not fixed law.
 
 This is a heuristic, not a verified end date. Read it as "unknown duration,
 capped," rather than a date Wikidata actually recorded. It is the single
 largest source of uncertainty in the dataset below the SPARQL filter layer
-itself.
+itself. Every country-year cell produced from this fallback (rather than
+from a recorded `P582` end date) is flagged `Duration_Estimated = True` in
+the long grid (Section 7), so this uncertainty is visible in the output
+instead of being indistinguishable from sourced data.
 
 If both `P580` (start) and `P582` (end) are present, `finish_year` is
 clamped to `max(finish_year, start_year)` so a data-entry error producing an
@@ -155,7 +184,7 @@ is the single source of truth all other views are derived from:
 
 | View | Derivation |
 |---|---|
-| `long` | The grid itself (`Country`, `Year`, `War_State`, `Active_Conflicts`) |
+| `long` | The grid itself (`Country`, `Year`, `War_State`, `Active_Conflicts`, `Duration_Estimated`) |
 | `binary` | Pivot of `War_State` by `Country` × `Year` |
 | `names` | Pivot of `Active_Conflicts` by `Country` × `Year` |
 | `list` | Deduplicated, sorted conflict names across the filtered long grid |
@@ -172,10 +201,17 @@ underlying conflict's full metadata.
 
 - Coverage and accuracy are bounded by Wikidata's own curation; HistWarDB
   does not independently verify fatality counts, dates, or belligerent lists.
-- No battle-death threshold means the dataset mixes major wars with minor,
-  sparsely documented conflicts.
+- No battle-death threshold by default means the dataset mixes major wars
+  with minor, sparsely documented conflicts, unless the caller opts into
+  `min_casualties` (Section 1.2) — and even then, only conflicts with a
+  recorded `P1120` figure below the threshold are excluded; conflicts
+  Wikidata never annotated with a death toll are not filtered by severity at
+  all.
 - `P710` (participant) is used as the belligerent-linking property; it does
-  not encode side/alliance (e.g. Allied vs. Axis), only participation.
+  not encode side/alliance (e.g. Allied vs. Axis), only participation, and
+  may include purely formal participation with no real economic or military
+  impact on the listed state. `min_casualties` (Section 1.2) is the primary
+  lever for suppressing this kind of low-signal `P710` noise.
 - The missing-end-date heuristic (Section 5) and the hand-maintained
   `FORCED_MAX_YEARS` table (Section 6.1) are both stopgaps for incomplete or
   inconsistent upstream data; both should shrink, not grow, as Wikidata's own
