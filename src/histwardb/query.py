@@ -28,8 +28,29 @@ DEFAULT_USER_AGENT = "HistWarDB/0.1 (academic-research; +https://github.com/Vinc
 CONFLICT_CLASS = "wd:Q198"
 
 # Classes excluded from being treated as a "war": peacekeeping missions and
-# military exercises are noise for a sovereign-war dataset.
-EXCLUDED_CONFLICT_CLASSES = ("wd:Q20082270", "wd:Q357104")
+# military exercises are noise for a sovereign-war dataset; hypothetical,
+# interstellar and other fictional wars are subclasses of "war" in Wikidata
+# and would otherwise be included (e.g. "Space War I"). The broader
+# "fictional entity" class is not usable here: the MINUS below would have to
+# enumerate every fictional item in Wikidata.
+EXCLUDED_CONFLICT_CLASSES = (
+    "wd:Q20082270",  # peacekeeping mission
+    "wd:Q357104",  # military exercise
+    "wd:Q124042044",  # hypothetical war
+    "wd:Q2661982",  # interstellar war
+    "wd:Q17198419",  # fictional war
+)
+
+# Classes of non-state participants whose member states are expanded into
+# participants on a common side (e.g. "Allies of World War II"). Members are
+# read from ``P527`` (has part) on the coalition and ``P463`` (member of) on
+# the state. Restricted to alliances on purpose: states such as the Soviet
+# Union also use ``P527`` for their own constituent republics.
+COALITION_CLASSES = (
+    "wd:Q878249",  # alliance
+    "wd:Q1127126",  # military alliance
+    "wd:Q100906234",  # multinational military coalition
+)
 
 # Entity types eligible as belligerents: sovereign state, historical country,
 # country. This positive filter is what keeps non-state actors out: a
@@ -108,7 +129,16 @@ def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
     """
 
 
-def build_entity_query(qids: Iterable[str], with_lifespan: bool = True, with_casualties: bool = False) -> str:
+def _values(qids: Iterable[str]) -> str:
+    return " ".join(f"wd:{qid}" for qid in qids)
+
+
+def build_entity_query(
+    qids: Iterable[str],
+    with_lifespan: bool = True,
+    with_casualties: bool = False,
+    with_structure: bool = False,
+) -> str:
     """Build the query fetching English labels (and attributes) for ``qids``.
 
     Parameters
@@ -122,8 +152,12 @@ def build_entity_query(qids: Iterable[str], with_lifespan: bool = True, with_cas
     with_casualties:
         When ``True`` also fetch the recorded death toll
         (:data:`CASUALTIES_PROPERTY`). Used for conflicts.
+    with_structure:
+        When ``True`` also fetch the item's classes (``P31``, with English
+        labels), the items it is part of (``P361``), its start and end time,
+        and whether it is itself a war (``isWar``). Used for conflicts and
+        for walking up their ``part of`` chain.
     """
-    values = " ".join(f"wd:{qid}" for qid in qids)
     variables = ""
     patterns = ""
     if with_lifespan:
@@ -137,9 +171,65 @@ def build_entity_query(qids: Iterable[str], with_lifespan: bool = True, with_cas
         variables += " ?casualties"
         patterns += f"""
         OPTIONAL {{ ?item {CASUALTIES_PROPERTY} ?casualties . }}"""
+    if with_structure:
+        variables += " ?type ?typeLabel ?parent ?warStart ?warEnd ?isWar"
+        patterns += f"""
+        OPTIONAL {{ ?item wdt:P31 ?type . ?type rdfs:label ?typeLabel . FILTER(LANG(?typeLabel) = "en") }}
+        OPTIONAL {{ ?item wdt:P361 ?parent . }}
+        OPTIONAL {{ ?item wdt:P580 ?warStart . }}
+        OPTIONAL {{ ?item wdt:P582 ?warEnd . }}
+        BIND(EXISTS {{ ?item wdt:P31/wdt:P279* {CONFLICT_CLASS} . }} AS ?isWar)"""
     return f"""
     SELECT ?item ?itemLabel{variables} WHERE {{
-        VALUES ?item {{ {values} }}
+        VALUES ?item {{ {_values(qids)} }}
         OPTIONAL {{ ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en") }}{patterns}
+    }}
+    """
+
+
+def build_participant_detail_query(conflict_qids: Iterable[str]) -> str:
+    """Build the query fetching qualifiers on the ``P710`` statements of conflicts.
+
+    Returns one row per qualifier value found: the participant's role
+    (``P3831``, with English label) and its own start/end time (``P580`` /
+    ``P582`` as qualifiers). Statements without any of these qualifiers
+    produce no row.
+    """
+    return f"""
+    SELECT ?conflict ?participant ?roleLabel ?participantStart ?participantEnd WHERE {{
+        VALUES ?conflict {{ {_values(conflict_qids)} }}
+        ?conflict p:P710 ?statement .
+        ?statement ps:P710 ?participant .
+        {{ ?statement pq:P3831 ?role . ?role rdfs:label ?roleLabel . FILTER(LANG(?roleLabel) = "en") }}
+        UNION {{ ?statement pq:P580 ?participantStart . }}
+        UNION {{ ?statement pq:P582 ?participantEnd . }}
+    }}
+    """
+
+
+def build_coalition_query(conflict_qids: Iterable[str]) -> str:
+    """Build the query expanding coalition participants into their member states.
+
+    A participant counts as a coalition when it is an instance of one of
+    :data:`COALITION_CLASSES` (or a subclass). Its members are the states
+    linked by ``P527`` (has part) from the coalition or ``P463`` (member of)
+    to it, restricted to :data:`COUNTRY_TYPES`.
+    """
+    coalition_values = " ".join(COALITION_CLASSES)
+    country_values = " ".join(COUNTRY_TYPES)
+    return f"""
+    SELECT DISTINCT ?conflict ?coalition ?coalitionLabel ?member WHERE {{
+        VALUES ?conflict {{ {_values(conflict_qids)} }}
+        ?conflict wdt:P710 ?coalition .
+        FILTER EXISTS {{
+            VALUES ?coalitionRoot {{ {coalition_values} }}
+            ?coalition wdt:P31/wdt:P279* ?coalitionRoot .
+        }}
+        {{ ?coalition wdt:P527 ?member . }} UNION {{ ?member wdt:P463 ?coalition . }}
+        FILTER EXISTS {{
+            VALUES ?memberRoot {{ {country_values} }}
+            ?member wdt:P31/wdt:P279* ?memberRoot .
+        }}
+        OPTIONAL {{ ?coalition rdfs:label ?coalitionLabel . FILTER(LANG(?coalitionLabel) = "en") }}
     }}
     """

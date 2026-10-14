@@ -20,6 +20,7 @@ import re
 import time
 import warnings
 from collections.abc import Iterable, Sequence
+from importlib import resources
 from pathlib import Path
 from typing import Optional, Union
 
@@ -33,8 +34,21 @@ from .query import (
     EXCLUDED_CONFLICT_CLASSES,
     QUERY_LIMIT,
     WIKIDATA_SPARQL_ENDPOINT,
+    build_coalition_query,
     build_entity_query,
+    build_participant_detail_query,
     build_sparql_query,
+)
+from .relations import (
+    assign_sides,
+    build_dyads,
+    coalition_participations,
+    missing_ancestors,
+    parse_coalitions,
+    parse_participant_details,
+    parse_structure,
+    resolve_roots,
+    summarize_conflicts,
 )
 
 # Manual upper bounds on a historical state's lifespan, applied on top of
@@ -71,6 +85,18 @@ VALID_VIEWS = ("long", "binary", "names", "list", "countries", "conflicts")
 # Whatever the policy, estimated records are flagged (``duration_estimated``).
 MISSING_END_POLICIES = ("heuristic", "open", "start_only", "drop")
 
+# How conflicts that are part of (P361) another war in the dataset are handled:
+#   "keep"    -- both the sub-conflict and its parent are kept (default);
+#   "drop"    -- sub-conflicts whose top-level war is in the dataset are
+#                dropped, so each state-year is attributed to one war only;
+#   "roll_up" -- sub-conflict participations are re-attributed to their
+#                top-level war, which also recovers participants that
+#                Wikidata lists only on a front or campaign.
+SUBCONFLICT_POLICIES = ("keep", "drop", "roll_up")
+
+# Rounds of P361 ancestor look-ups when resolving top-level wars.
+MAX_ANCESTOR_ROUNDS = 6
+
 # QIDs per entity query; keeps the GET URL well under server limits.
 ENTITY_BATCH_SIZE = 150
 
@@ -88,7 +114,35 @@ RECORD_COLUMNS = [
     "casualties",
     "country_start",
     "country_end",
+    "conflict_type",
+    "parent_conflict_qid",
+    "root_conflict_qid",
+    "root_conflict_name",
+    "side",
+    "side_qid",
+    "via_coalition",
+    "role",
 ]
+
+# Optional record fields and their defaults, for records built without them
+# (older snapshots, hand-made records in tests or offline pipelines).
+_RECORD_DEFAULTS = {
+    "country_qid": None,
+    "conflict_qid": None,
+    "iso3": None,
+    "duration_estimated": False,
+    "casualties": None,
+    "conflict_type": None,
+    "parent_conflict_qid": None,
+    "root_conflict_qid": None,
+    "root_conflict_name": None,
+    "side": None,
+    "side_qid": None,
+    "via_coalition": False,
+    "role": None,
+    "participant_start": None,
+    "participant_end": None,
+}
 
 LONG_COLUMNS = [
     "Country",
@@ -98,9 +152,16 @@ LONG_COLUMNS = [
     "Duration_Estimated",
     "Country_QID",
     "ISO3",
+    "COW_Code",
+    "GW_Code",
     "State_Exists",
     "War_Imputed",
 ]
+
+# Correlates of War and Gleditsch-Ward codes per Wikidata QID, shipped with
+# the package (built by scripts/build_crosswalk.py).
+CROSSWALK_FILE = "crosswalk.csv"
+CODE_COLUMNS = ["cow_code", "gw_code"]
 
 SNAPSHOT_DATA_FILE = "participations.csv"
 SNAPSHOT_METADATA_FILE = "metadata.json"
@@ -307,8 +368,21 @@ def build_records(
     missing_end: str = "heuristic",
     heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
     pre_cutoff_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
+    details: Optional[dict] = None,
+    sides: Optional[dict] = None,
+    roots: Optional[dict] = None,
 ) -> list[dict]:
-    """Join participation-query bindings with entity metadata into records."""
+    """Join participation-query bindings with entity metadata into records.
+
+    ``conflicts`` may come from :func:`parse_entities` or, with types and
+    parents, from :func:`~histwardb.relations.parse_structure`. The optional
+    ``details`` (``P710`` qualifiers), ``sides`` (coalition sides) and
+    ``roots`` (part-of resolution) enrich each record when given. A binding
+    carrying ``viaCoalition`` was synthesized from a coalition's members.
+    """
+    details = details or {}
+    sides = sides or {}
+    roots = roots or {}
     records: list[dict] = []
     for item in participations:
         conflict_qid = qid_from_uri(item["conflict"]["value"])
@@ -333,16 +407,35 @@ def build_records(
             heuristic_cutoff_year=heuristic_cutoff_year,
             pre_cutoff_duration_years=pre_cutoff_duration_years,
         )
-        if record is not None:
-            records.append(record)
+        if record is None:
+            continue
+
+        detail = details.get((conflict_qid, country_qid), {})
+        side = sides.get((conflict_qid, country_qid), {})
+        root = roots.get(conflict_qid, {})
+        root_qid = root.get("root")
+        record.update(
+            {
+                "conflict_type": "; ".join(conflict.get("types", [])) or None,
+                "parent_conflict_qid": root.get("parent"),
+                "root_conflict_qid": root_qid,
+                "root_conflict_name": conflicts.get(root_qid, {}).get("label") if root_qid else None,
+                "side": side.get("side"),
+                "side_qid": side.get("side_qid"),
+                "via_coalition": "viaCoalition" in item,
+                "role": "; ".join(detail.get("roles", [])) or None,
+                "participant_start": detail.get("start"),
+                "participant_end": detail.get("end"),
+            }
+        )
+        records.append(record)
     return records
 
 
 def _with_record_defaults(df: pd.DataFrame) -> pd.DataFrame:
     """Fill in the optional record columns so older 6-column records still work."""
     df = df.copy()
-    defaults = {"country_qid": None, "conflict_qid": None, "iso3": None, "duration_estimated": False, "casualties": None}
-    for column, default in defaults.items():
+    for column, default in _RECORD_DEFAULTS.items():
         if column not in df.columns:
             df[column] = default
     # Without a QID the label is the only identity available.
@@ -352,6 +445,34 @@ def _with_record_defaults(df: pd.DataFrame) -> pd.DataFrame:
     df["country_start"] = pd.to_numeric(df["country_start"], errors="coerce")
     df["country_end"] = pd.to_numeric(df["country_end"], errors="coerce")
     df["casualties"] = pd.to_numeric(df["casualties"], errors="coerce")
+    df["participant_start"] = pd.to_numeric(df["participant_start"], errors="coerce")
+    df["participant_end"] = pd.to_numeric(df["participant_end"], errors="coerce")
+    df["via_coalition"] = df["via_coalition"].astype(bool)
+    return df
+
+
+def _join_unique(values: pd.Series) -> Optional[str]:
+    """Aggregate "; "-joined strings into one sorted, deduplicated string."""
+    parts = {part for value in values.dropna() for part in str(value).split("; ") if part}
+    return "; ".join(sorted(parts)) if parts else None
+
+
+def _apply_subconflict_policy(df: pd.DataFrame, subconflicts: str) -> pd.DataFrame:
+    if subconflicts not in SUBCONFLICT_POLICIES:
+        raise ValueError(
+            f"Invalid subconflicts {subconflicts!r}. Choose from: {', '.join(SUBCONFLICT_POLICIES)}"
+        )
+    if subconflicts == "keep":
+        return df
+    is_sub = df["root_conflict_qid"].notna() & (df["root_conflict_qid"] != df["conflict_qid"])
+    if subconflicts == "drop":
+        return df[~(is_sub & df["root_conflict_qid"].isin(set(df["conflict_qid"])))]
+    df = df.copy()
+    root_names = df.loc[is_sub, "root_conflict_name"].fillna(df.loc[is_sub, "root_conflict_qid"])
+    df.loc[is_sub, "conflict_name"] = root_names
+    df.loc[is_sub, "conflict_qid"] = df.loc[is_sub, "root_conflict_qid"]
+    df.loc[is_sub, "parent_conflict_qid"] = None
+    df.loc[is_sub, "conflict_type"] = None
     return df
 
 
@@ -368,6 +489,7 @@ def clean_dataframe(
     start_year: int,
     end_year: int,
     min_casualties: Optional[float] = None,
+    subconflicts: str = "keep",
 ) -> pd.DataFrame:
     """Turn raw records into one clean row per (conflict, country) participation.
 
@@ -379,12 +501,14 @@ def clean_dataframe(
        toll (Wikidata P1120) is below it -- conflicts with no recorded toll
        are kept, since Wikidata's coverage of casualty figures is too sparse
        to treat "unknown" as "zero";
-    3. reduce each country to one lifespan (earliest start, latest end,
+    3. apply the ``subconflicts`` policy (:data:`SUBCONFLICT_POLICIES`);
+    4. reduce each country to one lifespan (earliest start, latest end,
        capped by :data:`FORCED_MAX_YEARS`);
-    4. reduce each (conflict, country) pair to one interval;
-    5. clip that interval to the country's lifespan and drop it if nothing
-       is left;
-    6. drop intervals entirely outside ``[start_year, end_year]``.
+    5. reduce each (conflict, country) pair to one interval;
+    6. clip that interval to the participant's own dates (``P710``
+       qualifiers, when recorded) and to the country's lifespan, and drop it
+       if nothing is left;
+    7. drop intervals entirely outside ``[start_year, end_year]``.
 
     ``start_year``/``end_year`` in the result are the clipped participation
     years; ``war_start_year``/``war_end_year`` keep the conflict's own dates.
@@ -401,6 +525,10 @@ def clean_dataframe(
         df = df[df["casualties"].isna() | (df["casualties"] >= min_casualties)]
         if df.empty:
             return pd.DataFrame(columns=RECORD_COLUMNS)
+
+    df = _apply_subconflict_policy(df, subconflicts)
+    if df.empty:
+        return pd.DataFrame(columns=RECORD_COLUMNS)
 
     # One lifespan per country, even when Wikidata lists several dates.
     lifespans = df.groupby("country_qid").agg(
@@ -424,6 +552,16 @@ def clean_dataframe(
             _any_end=("end_year", "max"),
             duration_estimated=("duration_estimated", "all"),
             casualties=("casualties", "max"),
+            participant_start=("participant_start", "min"),
+            participant_end=("participant_end", "max"),
+            conflict_type=("conflict_type", "first"),
+            parent_conflict_qid=("parent_conflict_qid", "first"),
+            root_conflict_qid=("root_conflict_qid", "first"),
+            root_conflict_name=("root_conflict_name", "first"),
+            side=("side", _join_unique),
+            side_qid=("side_qid", _join_unique),
+            via_coalition=("via_coalition", "all"),
+            role=("role", _join_unique),
         )
         .reset_index()
     )
@@ -432,8 +570,8 @@ def clean_dataframe(
 
     # Clip to the state's lifespan: a state cannot be at war in a year in
     # which it did not exist. Missing lifespan data imposes no constraint.
-    parts["start_year"] = parts[["war_start_year", "country_start"]].max(axis=1)
-    parts["end_year"] = parts[["war_end_year", "country_end"]].min(axis=1)
+    parts["start_year"] = parts[["war_start_year", "participant_start", "country_start"]].max(axis=1)
+    parts["end_year"] = parts[["war_end_year", "participant_end", "country_end"]].min(axis=1)
     parts = parts[parts["start_year"] <= parts["end_year"]]
 
     # Discard participations entirely outside the requested window.
@@ -499,12 +637,42 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
                     "Duration_Estimated": key in estimated,
                     "Country_QID": country.country_qid,
                     "ISO3": country.iso3,
+                    "COW_Code": getattr(country, "cow_code", pd.NA),
+                    "GW_Code": getattr(country, "gw_code", pd.NA),
                     "State_Exists": 1 if exists else 0,
                     "War_Imputed": 1 if names and key not in observed else 0,
                 }
             )
 
-    return pd.DataFrame(rows, columns=LONG_COLUMNS)
+    grid = pd.DataFrame(rows, columns=LONG_COLUMNS)
+    for column in ("COW_Code", "GW_Code"):
+        grid[column] = grid[column].astype("Int64")
+    return grid
+
+
+def load_crosswalk() -> pd.DataFrame:
+    """The bundled QID -> COW / Gleditsch-Ward code table (empty if not shipped)."""
+    try:
+        source = resources.files("histwardb").joinpath("data", CROSSWALK_FILE)
+        with source.open("r", encoding="utf-8") as f:
+            table = pd.read_csv(f, dtype={"country_qid": str})
+    except (FileNotFoundError, ModuleNotFoundError):
+        return pd.DataFrame(columns=["country_qid", *CODE_COLUMNS])
+    for column in CODE_COLUMNS:
+        table[column] = pd.to_numeric(table[column], errors="coerce").astype("Int64")
+    return table[["country_qid", *CODE_COLUMNS]]
+
+
+def attach_codes(records: pd.DataFrame, crosswalk: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Add ``cow_code`` / ``gw_code`` to participation records by country QID."""
+    crosswalk = load_crosswalk() if crosswalk is None else crosswalk
+    base = records.drop(columns=[c for c in CODE_COLUMNS if c in records.columns])
+    if base.empty:
+        return base.assign(**{c: pd.Series(dtype="Int64") for c in CODE_COLUMNS})
+    merged = base.merge(crosswalk, on="country_qid", how="left")
+    for column in CODE_COLUMNS:
+        merged[column] = merged[column].astype("Int64")
+    return merged
 
 
 def _sha256_normalized(path: Path) -> str:
@@ -552,6 +720,10 @@ class HistWarDB:
         knob for not treating a two-day skirmish the same as a world war.
         Conflicts with no recorded toll are kept (``None`` by default:
         no severity filtering).
+    subconflicts:
+        How conflicts that are part of another war in the dataset (e.g. a
+        front of World War II) are handled; one of
+        :data:`SUBCONFLICT_POLICIES`.
     strict:
         When ``True`` (default) a chunk that still fails after all retries
         raises :class:`FetchError`. When ``False`` the chunk is skipped with
@@ -579,6 +751,7 @@ class HistWarDB:
         heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
         pre_cutoff_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
         missing_end: str = "heuristic",
+        subconflicts: str = "keep",
         strict: bool = True,
         max_retries: int = 3,
         retry_backoff: float = 5.0,
@@ -588,6 +761,10 @@ class HistWarDB:
         if missing_end not in MISSING_END_POLICIES:
             raise ValueError(
                 f"Invalid missing_end {missing_end!r}. Choose from: {', '.join(MISSING_END_POLICIES)}"
+            )
+        if subconflicts not in SUBCONFLICT_POLICIES:
+            raise ValueError(
+                f"Invalid subconflicts {subconflicts!r}. Choose from: {', '.join(SUBCONFLICT_POLICIES)}"
             )
         self.start_year = start_year
         self.end_year = (
@@ -599,6 +776,7 @@ class HistWarDB:
         self.heuristic_cutoff_year = heuristic_cutoff_year
         self.pre_cutoff_duration_years = pre_cutoff_duration_years
         self.missing_end = missing_end
+        self.subconflicts = subconflicts
         self.strict = strict
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
@@ -670,6 +848,26 @@ class HistWarDB:
             bindings.extend(self._request(query))
         return parse_entities(bindings)
 
+    def _fetch_batched(self, build, qids: Sequence[str]) -> list[dict]:
+        bindings: list[dict] = []
+        for i in range(0, len(qids), ENTITY_BATCH_SIZE):
+            bindings.extend(self._request(build(qids[i : i + ENTITY_BATCH_SIZE])))
+        return bindings
+
+    def _fetch_structure(self, conflict_qids: Sequence[str]) -> dict[str, dict]:
+        """Fetch conflict types, parents and dates, then walk up P361 chains."""
+
+        def build(batch):
+            return build_entity_query(batch, with_lifespan=False, with_casualties=True, with_structure=True)
+
+        structure = parse_structure(self._fetch_batched(build, conflict_qids))
+        for _ in range(MAX_ANCESTOR_ROUNDS):
+            todo = missing_ancestors(structure)
+            if not todo:
+                break
+            structure.update(parse_structure(self._fetch_batched(build, todo)))
+        return structure
+
     def fetch_data(self) -> None:
         """Fetch all chunks from Wikidata and build the long-format grid."""
         participations: list[dict] = []
@@ -692,19 +890,31 @@ class HistWarDB:
                 )
 
         conflict_qids = sorted({qid_from_uri(p["conflict"]["value"]) for p in participations})
+        structure = self._fetch_structure(conflict_qids)
+        roots = resolve_roots(structure, conflict_qids)
+        details = parse_participant_details(self._fetch_batched(build_participant_detail_query, conflict_qids))
+        coalitions = parse_coalitions(self._fetch_batched(build_coalition_query, conflict_qids))
+
+        extra = coalition_participations(coalitions, structure, participations)
+        for binding in extra:
+            binding["viaCoalition"] = {"value": "true"}
+        participations = participations + extra
+
         country_qids = sorted({qid_from_uri(p["country"]["value"]) for p in participations})
-        conflicts = self._fetch_entities(conflict_qids, with_lifespan=False, with_casualties=True)
         countries = self._fetch_entities(country_qids, with_lifespan=True)
 
         self.retrieved_at = datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds")
         records = build_records(
             participations,
-            conflicts,
+            structure,
             countries,
             self.end_year,
             missing_end=self.missing_end,
             heuristic_cutoff_year=self.heuristic_cutoff_year,
             pre_cutoff_duration_years=self.pre_cutoff_duration_years,
+            details=details,
+            sides=assign_sides(coalitions),
+            roots=roots,
         )
         self.load_records(records)
 
@@ -715,14 +925,19 @@ class HistWarDB:
         and directly in tests/offline pipelines.
         """
         if not records:
-            self.df_records = pd.DataFrame(columns=RECORD_COLUMNS)
+            self.df_records = pd.DataFrame(columns=RECORD_COLUMNS + CODE_COLUMNS)
             self.df_long = pd.DataFrame(columns=LONG_COLUMNS)
             return
 
         df_raw = pd.DataFrame(records)
         self.df_records = clean_dataframe(
-            df_raw, self.start_year, self.end_year, min_casualties=self.min_casualties
+            df_raw,
+            self.start_year,
+            self.end_year,
+            min_casualties=self.min_casualties,
+            subconflicts=self.subconflicts,
         )
+        self.df_records = attach_codes(self.df_records)
         self.df_long = build_long_grid(self.df_records, self.start_year, self.end_year)
 
     # -- Snapshots -----------------------------------------------------------
@@ -755,6 +970,7 @@ class HistWarDB:
             "heuristic_cutoff_year": self.heuristic_cutoff_year,
             "pre_cutoff_duration_years": self.pre_cutoff_duration_years,
             "min_casualties": self.min_casualties,
+            "subconflicts": self.subconflicts,
             "failed_chunks": [list(c) for c in self.failed_chunks],
             "conflict_class": CONFLICT_CLASS,
             "excluded_conflict_classes": list(EXCLUDED_CONFLICT_CLASSES),
@@ -798,13 +1014,25 @@ class HistWarDB:
             heuristic_cutoff_year=metadata.get("heuristic_cutoff_year", HEURISTIC_CUTOFF_YEAR),
             pre_cutoff_duration_years=metadata.get("pre_cutoff_duration_years", PRE_CUTOFF_DEFAULT_DURATION_YEARS),
             min_casualties=metadata.get("min_casualties"),
+            subconflicts=metadata.get("subconflicts", "keep"),
             auto_fetch=False,
         )
         db.retrieved_at = metadata.get("retrieved_at")
         db.failed_chunks = [tuple(c) for c in metadata.get("failed_chunks", [])]
         records = pd.read_csv(data_path, dtype={"country_qid": str, "conflict_qid": str, "iso3": str})
         records["iso3"] = records["iso3"].where(records["iso3"].notna(), None)
-        db.df_records = records[RECORD_COLUMNS]
+        # Snapshots written before a column existed load with its default.
+        for column in RECORD_COLUMNS:
+            if column not in records.columns:
+                records[column] = _RECORD_DEFAULTS.get(column)
+        if all(c in records.columns for c in CODE_COLUMNS):
+            # The snapshot's own codes are part of the frozen data.
+            for column in CODE_COLUMNS:
+                records[column] = pd.to_numeric(records[column], errors="coerce").astype("Int64")
+            records = records[RECORD_COLUMNS + CODE_COLUMNS]
+        else:
+            records = attach_codes(records[RECORD_COLUMNS])
+        db.df_records = records
         db.df_long = build_long_grid(db.df_records, db.start_year, db.end_year)
         return db
 
@@ -816,6 +1044,21 @@ class HistWarDB:
         if self.df_records is None:
             raise ValueError("Dataset not initialized. Call fetch_data() or load_records() first.")
         return self.df_records.copy()
+
+    @property
+    def conflicts(self) -> pd.DataFrame:
+        """One row per conflict: type, parent and root war, dates, death toll, state counts."""
+        return summarize_conflicts(self.participations)
+
+    @property
+    def dyads(self) -> pd.DataFrame:
+        """Pairs of states on opposing known sides of the same conflict, with overlapping years.
+
+        Sides are only known where Wikidata lists a coalition (e.g. "Axis
+        Powers") as a participant, so this table covers a small subset of
+        conflicts; see the codebook.
+        """
+        return build_dyads(self.participations)
 
     def __call__(
         self,

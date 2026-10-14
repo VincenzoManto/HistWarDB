@@ -128,6 +128,46 @@ def lifespan_dataset():
     return db
 
 
+def test_attach_codes_joins_crosswalk_by_qid():
+    from histwardb.core import attach_codes
+
+    crosswalk = pd.DataFrame(
+        {"country_qid": ["Q159"], "cow_code": pd.array([365], dtype="Int64"), "gw_code": pd.array([365], dtype="Int64")}
+    )
+    records = pd.DataFrame({"country_qid": ["Q159", "Q901"], "country": ["Russia", "Short Republic"]})
+    out = attach_codes(records, crosswalk).set_index("country_qid")
+    assert out.loc["Q159", "cow_code"] == 365
+    assert pd.isna(out.loc["Q901", "cow_code"])
+
+
+def test_grid_carries_codes(monkeypatch, lifespan_dataset):
+    from histwardb import core
+
+    crosswalk = pd.DataFrame(
+        {"country_qid": ["Q159"], "cow_code": pd.array([365], dtype="Int64"), "gw_code": pd.array([365], dtype="Int64")}
+    )
+    monkeypatch.setattr(core, "load_crosswalk", lambda: crosswalk)
+    lifespan_dataset.load_records(lifespan_dataset.participations.to_dict("records"))
+    grid = lifespan_dataset(countries="Russia", view="long")
+    assert set(grid["COW_Code"]) == {365}
+    assert lifespan_dataset(countries="Prussia", view="long")["COW_Code"].isna().all()
+
+
+def test_bundled_crosswalk_is_well_formed():
+    from histwardb.core import load_crosswalk
+
+    table = load_crosswalk()
+    if table.empty:
+        pytest.skip("no crosswalk bundled")
+    assert table["country_qid"].str.fullmatch(r"Q\d+").all()
+    assert not table["country_qid"].duplicated().any()
+    # spot checks of hand-curated predecessor assignments
+    codes = dict(zip(table["country_qid"], table["cow_code"]))
+    for qid, code in {"Q142": 220, "Q145": 200, "Q43287": 255, "Q15180": 365}.items():
+        if qid in codes:
+            assert codes[qid] == code
+
+
 def test_long_view_carries_identifiers(lifespan_dataset):
     df = lifespan_dataset(countries="Short Republic", view="long")
     assert set(df["Country_QID"]) == {"Q901"}

@@ -42,3 +42,16 @@ def test_shipped_snapshot_invariants(snapshot):
 
     # wars typed as subclasses of "war" are present
     assert {"World War I", "World War II", "Vietnam War", "American Civil War"} <= set(parts["conflict_name"])
+
+    # fictional wars are excluded
+    assert "Space War I" not in set(parts["conflict_name"])
+
+    # newer snapshots carry sides, structure and crosswalk codes
+    if parts["side_qid"].notna().any():
+        wwii = parts[parts["conflict_qid"] == "Q362"]
+        assert {"Allies of World War II", "Axis Powers"} <= set(wwii["side"].dropna())
+        assert parts["root_conflict_qid"].notna().all()
+    if "cow_code" in parts.columns and parts["cow_code"].notna().any():
+        codes = parts.drop_duplicates("country_qid").set_index("country_qid")["cow_code"]
+        assert codes.get("Q142") == 220  # France
+        assert codes.get("Q15180") == 365  # Soviet Union

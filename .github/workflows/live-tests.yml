@@ -1,0 +1,26 @@
+name: Live Wikidata checks
+
+# The default test suite never touches the network. This workflow runs the
+# opt-in checks against query.wikidata.org once a week, so a QID that changes
+# meaning or a query that starts timing out is noticed without a code change.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run live checks
+        run: pytest -m network -v

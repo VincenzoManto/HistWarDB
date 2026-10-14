@@ -1,4 +1,10 @@
-from histwardb.query import QUERY_LIMIT, build_entity_query, build_sparql_query
+from histwardb.query import (
+    QUERY_LIMIT,
+    build_coalition_query,
+    build_entity_query,
+    build_participant_detail_query,
+    build_sparql_query,
+)
 
 
 def test_build_sparql_query_contains_temporal_bounds():
@@ -12,6 +18,39 @@ def test_build_sparql_query_excludes_noise_classes():
     q = build_sparql_query(1900, 1925, 2026)
     assert "wd:Q20082270" in q  # peacekeeping mission
     assert "wd:Q357104" in q  # military exercise
+
+
+def test_build_sparql_query_excludes_fictional_wars():
+    q = build_sparql_query(1900, 1925, 2026)
+    for qid in ("wd:Q124042044", "wd:Q2661982", "wd:Q17198419"):  # hypothetical, interstellar, fictional
+        assert qid in q
+    # "fictional entity" is too broad for the MINUS sub-select
+    assert "wd:Q14897293" not in q
+
+
+def test_build_participant_detail_query():
+    q = build_participant_detail_query(["Q362", "Q361"])
+    assert "VALUES ?conflict { wd:Q362 wd:Q361 }" in q
+    for pattern in ("p:P710 ?statement", "ps:P710 ?participant", "pq:P3831", "pq:P580", "pq:P582"):
+        assert pattern in q
+    assert q.count("{") == q.count("}")
+
+
+def test_build_coalition_query():
+    q = build_coalition_query(["Q362"])
+    assert "VALUES ?conflict { wd:Q362 }" in q
+    for qid in ("wd:Q878249", "wd:Q1127126", "wd:Q100906234"):
+        assert qid in q
+    assert "?coalition wdt:P527 ?member" in q
+    assert "?member wdt:P463 ?coalition" in q
+    assert q.count("{") == q.count("}")
+
+
+def test_build_entity_query_with_structure():
+    q = build_entity_query(["Q362"], with_lifespan=False, with_structure=True)
+    for pattern in ("wdt:P31 ?type", "wdt:P361 ?parent", "wdt:P580 ?warStart", "wdt:P582 ?warEnd", "AS ?isWar"):
+        assert pattern in q
+    assert q.count("{") == q.count("}")
 
 
 def test_build_sparql_query_does_not_exclude_organizations():
