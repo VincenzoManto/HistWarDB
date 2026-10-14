@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "A dynamic, programmatic historical and sovereign war dataset built on Wikidata."
 readme = "README.md"
 license = { file = "LICENSE" }
-authors = [{ name = "Vincenzo Manto" }]
+authors = [{ name = "Vincenzo Manto" }, { name = "Riccardo Dal Cero" }]
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -40,7 +40,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra -m 'not network'"
+markers = ["network: queries the live Wikidata endpoint (run with `pytest -m network`)"]
 
 [tool.ruff]
 line-length = 110

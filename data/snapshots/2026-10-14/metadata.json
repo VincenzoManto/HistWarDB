@@ -1,0 +1,40 @@
+{
+  "histwardb_version": "0.3.0",
+  "retrieved_at": "2026-10-14T15:08:24+00:00",
+  "source": "https://query.wikidata.org/sparql",
+  "start_year": 1700,
+  "end_year": 2026,
+  "chunk_size": 25,
+  "missing_end": "heuristic",
+  "heuristic_cutoff_year": 1800,
+  "pre_cutoff_duration_years": 5,
+  "min_casualties": null,
+  "failed_chunks": [],
+  "conflict_class": "wd:Q198",
+  "excluded_conflict_classes": [
+    "wd:Q20082270",
+    "wd:Q357104"
+  ],
+  "country_types": [
+    "wd:Q3624078",
+    "wd:Q3024240",
+    "wd:Q6256"
+  ],
+  "forced_max_years": {
+    "German Empire": 1918,
+    "Qing dynasty": 1912,
+    "Kingdom of Montenegro": 1918,
+    "Principality of Montenegro": 1910,
+    "Russian Soviet Federative Socialist Republic": 1991
+  },
+  "participation_query_template": "\n    SELECT DISTINCT ?conflict ?country ?startDate ?endDate WHERE {\n        hint:Query hint:optimizer \"None\" .\n\n        ?conflictClass wdt:P279* wd:Q198 .\n        ?conflict wdt:P31 ?conflictClass ;\n                wdt:P710 ?country ;\n                wdt:P580 ?startDate .\n\n        OPTIONAL { ?conflict wdt:P582 ?endDate . }\n\n        BIND(COALESCE(?endDate, \"2026-12-31T23:59:59Z\"^^xsd:dateTime) as ?effEndDate)\n        FILTER(?startDate < \"1725-01-01T00:00:00Z\"^^xsd:dateTime && ?effEndDate >= \"1700-01-01T00:00:00Z\"^^xsd:dateTime)\n\n        VALUES ?countryType { wd:Q3624078 wd:Q3024240 wd:Q6256 }\n        ?countryClass wdt:P279* ?countryType .\n        ?country wdt:P31 ?countryClass .\n\n        MINUS {\n            { SELECT DISTINCT ?excludedClass WHERE {\n                VALUES ?excludedRoot { wd:Q20082270 wd:Q357104 }\n                ?excludedClass wdt:P279* ?excludedRoot .\n            } }\n            ?conflict wdt:P31 ?excludedClass .\n        }\n    }\n    ORDER BY ?conflict ?country ?startDate\n    LIMIT 5000\n    ",
+  "n_participations": 1438,
+  "n_conflicts": 502,
+  "n_countries": 433,
+  "n_duration_estimated": 44,
+  "files": {
+    "participations.csv": {
+      "sha256_lf": "9ad34ac6fa7d495ae6e4c1964b93c99e34661037529e91e2a0dc70b0eb3539fc"
+    }
+  }
+}

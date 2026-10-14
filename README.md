@@ -1,23 +1,27 @@
 # HistWarDB 🌍⚔️
-> *Advanced Historical & Sovereign War Dataset powered by Wikidata*
+> *Historical & Sovereign War Dataset powered by Wikidata*
 
 [![Tests](https://github.com/VincenzoManto/histwardb/actions/workflows/tests.yml/badge.svg)](https://github.com/VincenzoManto/histwardb/actions/workflows/tests.yml)
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/1410596751.svg)](https://doi.org/10.5281/zenodo.23243673)
 
-**HistoricalWarDB** (HistWarDB) is a dynamic, programmatic Python toolkit designed to extract, clean, and analyze global warfare data from Wikidata spanning from 1700 to the present. Built for researchers, historians, and data scientists, it bridges the gap between crowdsourced knowledge and rigorous historical data pipelines, supporting both modern sovereign states and historical empires.
+**HistWarDB** is a Python toolkit that extracts, cleans and analyses war participation data from Wikidata, from 1700 to the present, for both modern sovereign states and historical states. It produces a table of who took part in which war and a Country × Year panel derived from it.
+
+The coding rules are written down in the [codebook](CODEBOOK.md). Please read its "Known limitations" section before using the data for research: coverage is bounded by Wikidata and has not yet been validated against Correlates of War or UCDP.
 
 ---
 
 ## Key Features
 
-* **Dynamic SPARQL Pipeline:** Fetches conflicts using 25-year temporal chunks to bypass query limits and ensure high data completeness.
-* **Rigorous Anti-Noise Filtering:** Automatically excludes peacekeeping missions (`wd:Q35349`), military exercises (`wd:Q1151430`), and non-state actors.
-* **Historical State Support:** Seamlessly tracks historical entities (e.g., *German Empire*, *Qing dynasty*, *Kingdom of Montenegro*) with built-in lifespan sanity checks.
-* **Flexible Analytical Views:** Instantly transforms data into long formats, binary matrices (`0/1`), conflict name mappings, or custom `LIKE` keyword search results.
-* **Interactive Visualizations:** Out-of-the-box Plotly heatmap generation to visualize global conflict intensity over centuries.
-* **Tested and reproducible:** Network I/O, SPARQL query construction, and data-cleaning logic are separated into independent, unit-tested modules — no live Wikidata access required to run the test suite.
+* **Wars and their subclasses:** every Wikidata item typed as `war` or a subclass (world war, civil war, proxy war, ...), minus peacekeeping missions and military exercises.
+* **State belligerents only:** participants must be typed as sovereign state, historical country or country.
+* **Stable identifiers:** every conflict and country carries its Wikidata QID; countries also carry an ISO 3166-1 alpha-3 code where Wikidata has one.
+* **Lifespan-aware:** a state is never counted at war in a year in which it did not exist, and the panel says which country-years fall outside a state's lifespan.
+* **Explicit uncertainty:** conflicts with no recorded end date are flagged, and the rule used to extend them is a parameter.
+* **Fails loudly:** queries are retried with backoff; a chunk that cannot be fetched raises an error instead of silently leaving a gap.
+* **Frozen snapshots:** save and reload a dataset with retrieval metadata and a checksum, so published results can be reproduced.
+* **Analytical views and plots:** long format, binary matrix, conflict names, lists, and a Plotly heatmap.
 
 ---
 
@@ -27,7 +31,9 @@
 src/histwardb/
     query.py   # SPARQL query construction (pure, no I/O)
     core.py    # HistWarDB class: fetch, parse, clean, analytical views
+data/snapshots/  # frozen, checksummed copies of the dataset
 tests/         # pytest suite (parsing, filtering, views, mocked network)
+CODEBOOK.md    # coding rules and column definitions
 HistWarDB.ipynb  # usage demo notebook (Colab-compatible)
 ```
 
@@ -52,45 +58,88 @@ pip install -e ".[dev]"
 ```python
 from histwardb import HistWarDB
 
-# Initialize the dataset from 1700 to 2026
+# Fetch live from Wikidata, 1700 to 2026 (about 20 queries, 2-3 minutes)
 gwd = HistWarDB(start_year=1700, end_year=2026)
 
-# Query specific countries in long format
+# Who took part in what: one row per conflict x country, with QIDs and dates
+print(gwd.participations.head())
+
+# Country x Year panel for specific countries (exact match on name, QID or ISO code)
 france_uk_wars = gwd(countries=["France", "United Kingdom"], view="long", only_in_war=True)
-print(france_uk_wars.head())
 
-# Get a binary matrix for specific historical periods
-binary_view = gwd(countries="German Empire", view="binary", from_date="1900-01-01", to_date="1918-12-31")
+# Binary matrix for a period; years outside the state's lifespan read <NA>
+binary_view = gwd(countries="German Empire", view="binary", from_date=1900, to_date=1925, only_existing=True)
 
-# Plot an interactive heatmap for the top 15 conflict-prone states
+# Heatmap for the 15 states with most war-years
 gwd.plot_heatmap(top_n=15, from_year=1800, to_year=2026).show()
 ```
+
+### Reproducible use: snapshots
+
+Wikidata changes every day, so two live fetches can differ. For anything you intend to publish, work from a frozen snapshot and cite it:
+
+```python
+# Load the snapshot shipped with the repository (no network access)
+gwd = HistWarDB.from_snapshot("data/snapshots/2026-10-14")
+
+# Or freeze your own fetch
+gwd = HistWarDB(start_year=1700, end_year=2026)
+gwd.save_snapshot("my_snapshot")   # participations.csv + metadata.json
+```
+
+`metadata.json` records the retrieval time, parameters, query text, row counts and a SHA-256 checksum that `from_snapshot` verifies.
+
+### Conflicts with no end date
+
+Some Wikidata conflicts have a start date and no end date. The `missing_end` parameter decides how far they are extended:
+
+```python
+HistWarDB(missing_end="heuristic")   # default: to the present if started 1800 or later, else 5 years
+HistWarDB(missing_end="start_only")  # conservative: start year only
+HistWarDB(missing_end="open")        # always to the present
+HistWarDB(missing_end="drop")        # discard them
+```
+
+Whatever the rule, affected rows are flagged (`duration_estimated` in the participation table, `Duration_Estimated` and `War_Imputed` in the panel), so you can filter them out. The cutoff year and pre-cutoff duration of the default rule are parameters too (`heuristic_cutoff_year`, `pre_cutoff_duration_years`).
+
+### Severity threshold
+
+```python
+HistWarDB(min_casualties=1000)  # drop conflicts with a recorded death toll below 1,000
+```
+
+Conflicts without a recorded toll (Wikidata `P1120`) are kept. Few conflicts have one, so this filter currently changes little; see the [codebook](CODEBOOK.md#12-optional-severity-threshold-min_casualties).
 
 ---
 
 ## Supported Views (`view` parameter)
 
-The dataset interface supports multiple analytical views via the `gwd(...)` call:
+* **`"long"`**: tidy DataFrame with `Country`, `Year`, `War_State`, `Active_Conflicts`, `Duration_Estimated`, `Country_QID`, `ISO3`, `State_Exists`, `War_Imputed`.
+* **`"binary"`**: countries as rows, years as columns, `1` = at war, `0` = no war recorded.
+* **`"names"`**: same shape, with the names of the active conflicts.
+* **`"list"`**: alphabetical list of the conflict names under the current filters.
+* **`"countries"` / `"conflicts"`**: sorted lists of countries at war, or of conflicts, under the current filters.
 
-* **`"long"`**: Standard tidy DataFrame containing columns: `Country`, `Year`, `War_State`, and `Active_Conflicts`.
-* **`"binary"`**: Wide pivot table with countries as rows, years as columns, and binary values (`1` = at war, `0` = peace).
-* **`"names"`**: Wide pivot table containing the literal names of active conflicts per year.
-* **`"list"`**: Alphabetical list of all unique conflict names extracted under current filters.
-* **`"countries"` / `"conflicts"`**: Sorted lists of active entities or unique conflicts matching the query criteria.
+`War_State = 0` means "no war recorded in Wikidata", not "peace". Use `State_Exists` (or `only_existing=True`) to separate years in which the state did not exist. See the [codebook](CODEBOOK.md#72-country--year-grid-viewlong).
 
 ---
 
 ## Testing
 
-The test suite never queries the live Wikidata endpoint. The `HistWarDB`
+The default test suite never queries the live Wikidata endpoint. The `HistWarDB`
 class accepts an injectable `session` object for its HTTP calls, and all
-parsing/filtering logic (`histwardb.core.parse_bindings`,
-`clean_dataframe`, `build_long_grid`) is pure and tested against static
-fixtures:
+parsing/filtering logic is pure and tested against static fixtures:
 
 ```bash
 pip install -e ".[dev]"
 pytest --cov=histwardb
+```
+
+A small opt-in suite checks the real endpoint: that every QID constant means
+what the code says, and that well-known wars and states come back.
+
+```bash
+pytest -m network
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
@@ -99,11 +148,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Citation
 
-If you use **HistWarDB** in your academic research, working paper, or data science project, please cite it using the following format (also available in machine-readable form in [`CITATION.cff`](CITATION.cff)):
+If you use **HistWarDB** in your academic research, working paper, or data science project, please cite it using the following format (also available in machine-readable form in [`CITATION.cff`](CITATION.cff)), and state which snapshot you used:
 
 ```bibtex
 @software{histwardb2026,
-  author = {Vincenzo Manto},
+  author = {Manto, Vincenzo and Dal Cero, Riccardo},
   title = {HistWarDB: A Dynamic Wikidata-Based Historical War Dataset},
   year = {2026},
   url = {https://github.com/VincenzoManto/histwardb}
@@ -114,4 +163,4 @@ If you use **HistWarDB** in your academic research, working paper, or data scien
 
 ## License
 
-Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.
+Code is distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information. The data comes from [Wikidata](https://www.wikidata.org/), which is released under CC0.
