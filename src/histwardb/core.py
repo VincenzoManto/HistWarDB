@@ -32,6 +32,18 @@ FORCED_MAX_YEARS = {
     "Russian Soviet Federative Socialist Republic": 1991,
 }
 
+# Duration heuristic applied when a conflict has no recorded end date
+# (Wikidata P582). Conflicts starting before ``HEURISTIC_CUTOFF_YEAR`` are
+# assumed to have lasted ``PRE_CUTOFF_DEFAULT_DURATION_YEARS`` years;
+# conflicts starting at or after it are assumed ongoing through the
+# dataset's ``end_year``. Both numbers are deliberately named constants
+# (rather than inline literals) so callers can see and override them --
+# they are rough estimates, not ground truth, and every record built from
+# them is flagged via the ``Duration_Estimated`` column instead of being
+# silently indistinguishable from a sourced end date.
+HEURISTIC_CUTOFF_YEAR = 1800
+PRE_CUTOFF_DEFAULT_DURATION_YEARS = 5
+
 VALID_VIEWS = ("long", "binary", "names", "list", "countries", "conflicts")
 
 _YEAR_RE = re.compile(r"([+-]?\d+)")
@@ -48,8 +60,20 @@ def parse_year(date_str: Optional[str]) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
-def parse_bindings(bindings: Iterable[dict], end_year: int) -> list[dict]:
-    """Turn raw SPARQL JSON ``bindings`` into flat conflict/country records."""
+def parse_bindings(
+    bindings: Iterable[dict],
+    end_year: int,
+    heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
+    pre_cutoff_default_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
+) -> list[dict]:
+    """Turn raw SPARQL JSON ``bindings`` into flat conflict/country records.
+
+    When a conflict has no recorded end date, its duration is estimated
+    (see module-level ``HEURISTIC_CUTOFF_YEAR`` /
+    ``PRE_CUTOFF_DEFAULT_DURATION_YEARS`` for the rule); such records are
+    flagged via ``duration_estimated=True`` rather than silently presented
+    as sourced data.
+    """
     records: list[dict] = []
     for item in bindings:
         country = item["countryLabel"]["value"]
@@ -62,8 +86,13 @@ def parse_bindings(bindings: Iterable[dict], end_year: int) -> list[dict]:
         if start_year is None:
             continue
 
+        duration_estimated = finish_year is None
         if finish_year is None:
-            finish_year = end_year if start_year >= 1800 else (start_year + 5)
+            finish_year = (
+                end_year
+                if start_year >= heuristic_cutoff_year
+                else (start_year + pre_cutoff_default_duration_years)
+            )
         else:
             finish_year = max(finish_year, start_year)
 
@@ -75,6 +104,13 @@ def parse_bindings(bindings: Iterable[dict], end_year: int) -> list[dict]:
         else:
             country_end = None
 
+        casualties = None
+        if "casualties" in item:
+            try:
+                casualties = float(item["casualties"]["value"])
+            except (TypeError, ValueError):
+                casualties = None
+
         records.append(
             {
                 "country": country,
@@ -83,6 +119,8 @@ def parse_bindings(bindings: Iterable[dict], end_year: int) -> list[dict]:
                 "end_year": finish_year,
                 "country_start": country_start,
                 "country_end": country_end,
+                "casualties": casualties,
+                "duration_estimated": duration_estimated,
             }
         )
     return records
@@ -95,11 +133,26 @@ def _is_forced_dead(row: pd.Series) -> bool:
     return row["start_year"] > dead_year or row["end_year"] > dead_year
 
 
-def clean_dataframe(df_raw: pd.DataFrame, start_year: int, end_year: int) -> pd.DataFrame:
-    """Apply anachronism and chronological sanity filters to raw records.
+def clean_dataframe(
+    df_raw: pd.DataFrame,
+    start_year: int,
+    end_year: int,
+    min_casualties: Optional[int] = None,
+) -> pd.DataFrame:
+    """Apply anachronism, chronological, and severity sanity filters to raw records.
 
     Pure function: no network access, safe to unit test with synthetic
     DataFrames.
+
+    Parameters
+    ----------
+    min_casualties:
+        When set, conflicts with a *recorded* death toll (Wikidata P1120)
+        below this value are dropped -- e.g. to exclude minor skirmishes
+        from a dataset meant to track macro-level conflicts. Conflicts
+        with no recorded death toll are kept regardless, since Wikidata's
+        coverage of casualty figures is too sparse to treat "unknown" as
+        "zero".
     """
     if df_raw.empty:
         return df_raw
@@ -108,6 +161,12 @@ def clean_dataframe(df_raw: pd.DataFrame, start_year: int, end_year: int) -> pd.
     df = df[~df["country"].str.contains(r"^Q\d+$", na=False)]
     if df.empty:
         return df
+
+    if min_casualties is not None and "casualties" in df.columns:
+        casualties = df["casualties"].astype("Float64")
+        df = df[casualties.isna() | (casualties >= min_casualties)]
+        if df.empty:
+            return df
 
     # Drop records for historical states active after their real dissolution.
     df = df[~df.apply(_is_forced_dead, axis=1)]
@@ -141,7 +200,7 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
 
     grid = pd.DataFrame(
         [
-            {"Country": c, "Year": y, "War_State": 0, "Active_Conflicts": ""}
+            {"Country": c, "Year": y, "War_State": 0, "Active_Conflicts": "", "Duration_Estimated": False}
             for c in countries
             for y in years
         ]
@@ -156,6 +215,7 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
         in_y = max(row["start_year"], start_year)
         fi_y = min(row["end_year"], end_year)
         name = row["conflict_name"]
+        estimated = bool(row.get("duration_estimated", False))
 
         for y in range(in_y, fi_y + 1):
             key = (c, y)
@@ -164,6 +224,8 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
             grid.at[key, "War_State"] = 1
             existing = grid.at[key, "Active_Conflicts"]
             grid.at[key, "Active_Conflicts"] = f"{existing}; {name}".strip("; ") if existing else name
+            if estimated:
+                grid.at[key, "Duration_Estimated"] = True
 
     return grid.reset_index()
 
@@ -190,6 +252,19 @@ class HistWarDB:
         construction. Set to ``False`` to construct an empty instance and
         call :meth:`fetch_data` (or :meth:`load_records`) manually -- handy
         for tests and offline usage.
+    min_casualties:
+        Optional minimum recorded death toll (Wikidata P1120). Conflicts
+        with a recorded toll below this value are excluded, which is the
+        knob for not treating a two-day skirmish the same as a world war.
+        Conflicts with no recorded toll are kept (``None`` by default:
+        no severity filtering, matching prior behavior).
+    heuristic_cutoff_year, pre_cutoff_duration_years:
+        Tune the fallback applied when a conflict has no recorded end
+        date: conflicts starting before ``heuristic_cutoff_year`` are
+        assumed to last ``pre_cutoff_duration_years`` years; conflicts
+        starting on/after it are assumed to run through ``end_year``.
+        Records built from this fallback are flagged in the
+        ``Duration_Estimated`` column of the resulting grid.
     """
 
     def __init__(
@@ -199,6 +274,9 @@ class HistWarDB:
         chunk_size: int = 25,
         session: Optional[requests.Session] = None,
         auto_fetch: bool = True,
+        min_casualties: Optional[int] = None,
+        heuristic_cutoff_year: int = HEURISTIC_CUTOFF_YEAR,
+        pre_cutoff_duration_years: int = PRE_CUTOFF_DEFAULT_DURATION_YEARS,
     ) -> None:
         self.start_year = start_year
         self.end_year = (
@@ -206,6 +284,9 @@ class HistWarDB:
         )
         self.chunk_size = chunk_size
         self.session = session or requests
+        self.min_casualties = min_casualties
+        self.heuristic_cutoff_year = heuristic_cutoff_year
+        self.pre_cutoff_duration_years = pre_cutoff_duration_years
         self.df_long: Optional[pd.DataFrame] = None
 
         if auto_fetch:
@@ -236,7 +317,14 @@ class HistWarDB:
             query_end = chunk_end + 1 if chunk_end >= self.end_year else chunk_end
             try:
                 bindings = self._fetch_chunk(chunk_start, query_end)
-                all_records.extend(parse_bindings(bindings, self.end_year))
+                all_records.extend(
+                    parse_bindings(
+                        bindings,
+                        self.end_year,
+                        heuristic_cutoff_year=self.heuristic_cutoff_year,
+                        pre_cutoff_default_duration_years=self.pre_cutoff_duration_years,
+                    )
+                )
             except requests.RequestException as exc:
                 print(f"Block {chunk_start}-{chunk_end} temporarily skipped: {exc}")
                 continue
@@ -250,11 +338,15 @@ class HistWarDB:
         and directly in tests/offline pipelines.
         """
         if not records:
-            self.df_long = pd.DataFrame(columns=["Country", "Year", "War_State", "Active_Conflicts"])
+            self.df_long = pd.DataFrame(
+                columns=["Country", "Year", "War_State", "Active_Conflicts", "Duration_Estimated"]
+            )
             return
 
         df_raw = pd.DataFrame(records)
-        df_clean = clean_dataframe(df_raw, self.start_year, self.end_year)
+        df_clean = clean_dataframe(
+            df_raw, self.start_year, self.end_year, min_casualties=self.min_casualties
+        )
         self.df_long = build_long_grid(df_clean, self.start_year, self.end_year)
 
     # -- Query interface -----------------------------------------------------

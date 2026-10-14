@@ -23,6 +23,13 @@ COUNTRY_TYPES = ("wd:Q3624078", "wd:Q3024240", "wd:Q6256")
 # organization, national sports team.
 EXCLUDED_COUNTRY_CLASSES = ("wd:Q5", "wd:Q43229", "wd:Q1194951")
 
+# Wikidata property used to fetch a conflict's recorded death toll, so
+# callers can filter out low-severity/noise entries (see
+# ``min_casualties`` on :class:`~histwardb.core.HistWarDB`). Left as
+# OPTIONAL in the query: conflicts without a recorded figure are still
+# fetched and are never dropped purely for lacking this data.
+CASUALTIES_PROPERTY = "wdt:P1120"
+
 
 def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
     """Build the SPARQL query fetching conflicts overlapping [chunk_start, chunk_end).
@@ -45,12 +52,13 @@ def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
     country_values = " ".join(COUNTRY_TYPES)
 
     return f"""
-    SELECT DISTINCT ?conflictLabel ?countryLabel ?startDate ?endDate ?countryStart ?countryEnd ?countryEndFallback WHERE {{
+    SELECT DISTINCT ?conflictLabel ?countryLabel ?startDate ?endDate ?countryStart ?countryEnd ?countryEndFallback ?casualties WHERE {{
         ?conflict wdt:P31/wdt:P279* {CONFLICT_CLASS} ;
                 wdt:P710 ?country ;
                 wdt:P580 ?startDate .
 
         OPTIONAL {{ ?conflict wdt:P582 ?endDate . }}
+        OPTIONAL {{ ?conflict {CASUALTIES_PROPERTY} ?casualties . }}
 
         {excluded_conflicts}
 
