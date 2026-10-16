@@ -234,7 +234,7 @@ function drawSunburst(d) {
     parents: d.parents,
     values: d.values,
     leaf: { opacity: 0.9 },
-    marker: { colorscale: "Portland", line: { color: "#0a0a0f", width: 1 } },
+    marker: { colors: d.colors, line: { color: "#0a0a0f", width: 1 } },
   };
   const layout = Object.assign({}, LAYOUT_BASE, { margin: { t: 10, r: 10, b: 10, l: 10 } });
   Plotly.newPlot("chart-sunburst", [trace], layout, CONFIG);
