@@ -3,14 +3,25 @@ import pytest
 from histwardb import HistWarDB
 
 
-def _binding(country, conflict, start, end=None, country_start=None, country_end=None):
+def _binding(
+    country,
+    conflict,
+    start,
+    end=None,
+    country_start=None,
+    country_end=None,
+    start_precision=9,
+    end_precision=9,
+):
     b = {
         "countryLabel": {"value": country},
         "conflictLabel": {"value": conflict},
         "startDate": {"value": f"{start}-01-01T00:00:00Z"},
+        "startDatePrecision": {"value": str(start_precision)},
     }
     if end is not None:
         b["endDate"] = {"value": f"{end}-01-01T00:00:00Z"}
+        b["endDatePrecision"] = {"value": str(end_precision)}
     if country_start is not None:
         b["countryStart"] = {"value": f"{country_start}-01-01T00:00:00Z"}
     if country_end is not None:

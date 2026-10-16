@@ -124,7 +124,34 @@ instead of being indistinguishable from sourced data.
 
 If both `P580` (start) and `P582` (end) are present, `finish_year` is
 clamped to `max(finish_year, start_year)` so a data-entry error producing an
-end date before the start date cannot invert the conflict's span.
+end date before the start date cannot invert the conflict's span; when this
+clamp fires, the end date's month/day are discarded along with it (they no
+longer correspond to the clamped year).
+
+### 5.1 Date precision (month/day)
+
+Wikidata always serializes a date value as a full `+YYYY-MM-DDTHH:MM:SSZ`
+literal, even when the underlying statement only actually asserts a year or
+a month — the unused components are silently filled with `01`. Reading the
+literal alone cannot tell you which parts are real.
+
+To avoid fabricating precision Wikidata never asserted, the query
+([`build_sparql_query`](src/histwardb/query.py)) fetches each date's
+`wikibase:timePrecision` via the statement's value node (`p:P580/psv:P580`
+and `p:P582/psv:P582`), and [`parse_date_parts`](src/histwardb/core.py) uses
+it to decide what to keep:
+
+| `timePrecision` | Meaning | Columns populated |
+|---|---|---|
+| `11` | Day | year, month, day |
+| `10` | Month | year, month |
+| `9` or coarser | Year or less precise | year only |
+
+A missing precision value (e.g. a hand-built record bypassing the live
+query) is treated as day precision for backward compatibility. Every
+conflict record carries `start_year`/`start_month`/`start_day` and
+`end_year`/`end_month`/`end_day` — not a single ambiguous date string — with
+the unknown components set to `None` rather than defaulted to `01`.
 
 ## 6. Post-fetch cleaning (`clean_dataframe`)
 
@@ -174,28 +201,44 @@ has to be maintained by hand and will silently drift out of date.
 
 ## 7. Grid construction and derived views
 
-Cleaned records are expanded into a dense **Country × Year** grid covering
-every year in `[start_year, end_year]` for every country appearing in the
-cleaned data (`build_long_grid`), not just the years where the country has a
-recorded conflict. A country-year cell is marked `War_State = 1` if any
-cleaned conflict record covers that year for that country; `Active_Conflicts`
-concatenates the names of all such conflicts (`"; "`-joined). This long grid
-is the single source of truth all other views are derived from:
+Cleaned records are expanded into a dense **Country × Year × Month** grid
+covering every month of every year in `[start_year, end_year]` for every
+country appearing in the cleaned data (`build_long_grid`), not just the
+months where the country has a recorded conflict. A conflict with real
+month/day precision (Section 5.1) only lights up the months it actually
+covers; a conflict known only to year precision is treated as covering all
+12 months of that year, rather than fabricating a specific month. A
+country-year-month cell is marked `War_State = 1` if any cleaned conflict
+record covers that month for that country; `Active_Conflicts` concatenates
+the names of all such conflicts (`"; "`-joined). This long grid is the
+source of truth for the aggregated views:
 
 | View | Derivation |
 |---|---|
-| `long` | The grid itself (`Country`, `Year`, `War_State`, `Active_Conflicts`, `Duration_Estimated`) |
-| `binary` | Pivot of `War_State` by `Country` × `Year` |
-| `names` | Pivot of `Active_Conflicts` by `Country` × `Year` |
+| `long` | The grid itself (`Country`, `Year`, `Month`, `War_State`, `Active_Conflicts`, `Duration_Estimated`) |
+| `binary` | Pivot of `War_State` by `Country` × `"YYYY-MM"` period |
+| `names` | Pivot of `Active_Conflicts` by `Country` × `"YYYY-MM"` period |
 | `list` | Deduplicated, sorted conflict names across the filtered long grid |
 | `countries` | Sorted countries with `War_State == 1` in the filtered window |
 | `conflicts` | Sorted, deduplicated conflict names among `War_State == 1` rows |
+| `records` | One row per cleaned conflict (`build_records_view`): `Country`, `Conflict_Name`, `Start_Year/Month/Day`, `End_Year/Month/Day`, `Duration_Estimated`, `Casualties` |
+
+The `records` view exists because a single grid cell can contain several
+overlapping conflicts with different date precisions — a single pair of
+date columns on the grid itself would be ambiguous whenever more than one
+conflict is active. `records` instead carries the precise per-conflict
+dates from Section 5.1 directly, unaggregated.
 
 Query-time filters (`countries`, `from_date`/`to_date`, `only_in_war`,
-`keyword`) are applied to this grid before a view is rendered, so e.g. a
-`keyword` filter matches against the already-concatenated
-`Active_Conflicts` string, substring/case-insensitive, not against the
-underlying conflict's full metadata.
+`keyword`) are applied before a view is rendered. `from_date`/`to_date`
+accept a plain year (`"YYYY"` or `int`), or `"YYYY-MM"` for a specific
+month; an omitted month defaults to January for `from_date` and December
+for `to_date`, so year-only bounds still select whole years. For the
+`records` view, these filters test for date-range overlap against
+`Start_Year/Start_Month` and `End_Year/End_Month` instead of the grid's
+`Year`/`Month`. A `keyword` filter on the aggregated views matches against
+the already-concatenated `Active_Conflicts` string (substring,
+case-insensitive); on `records` it matches `Conflict_Name` directly.
 
 ## 8. Known limitations
 

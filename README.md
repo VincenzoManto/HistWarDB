@@ -72,11 +72,14 @@ gwd.plot_heatmap(top_n=15, from_year=1800, to_year=2026).show()
 
 The dataset interface supports multiple analytical views via the `gwd(...)` call:
 
-* **`"long"`**: Standard tidy DataFrame containing columns: `Country`, `Year`, `War_State`, and `Active_Conflicts`.
-* **`"binary"`**: Wide pivot table with countries as rows, years as columns, and binary values (`1` = at war, `0` = peace).
-* **`"names"`**: Wide pivot table containing the literal names of active conflicts per year.
+* **`"long"`**: Standard tidy DataFrame containing columns: `Country`, `Year`, `Month`, `War_State`, and `Active_Conflicts` (monthly resolution; a conflict only known to year precision fills all 12 months).
+* **`"binary"`**: Wide pivot table with countries as rows, `"YYYY-MM"` periods as columns, and binary values (`1` = at war, `0` = peace).
+* **`"names"`**: Wide pivot table containing the literal names of active conflicts per `"YYYY-MM"` period.
 * **`"list"`**: Alphabetical list of all unique conflict names extracted under current filters.
 * **`"countries"` / `"conflicts"`**: Sorted lists of active entities or unique conflicts matching the query criteria.
+* **`"records"`**: One row per individual conflict, with explicit `Start_Year`/`Start_Month`/`Start_Day` and `End_Year`/`End_Month`/`End_Day` columns — populated only to the precision Wikidata actually records (unknown components are `None`, never fabricated).
+
+`from_date`/`to_date` accept a year (`"YYYY"` or `int`) or a specific month (`"YYYY-MM"`); an omitted month defaults to the start/end of the year respectively.
 
 ---
 

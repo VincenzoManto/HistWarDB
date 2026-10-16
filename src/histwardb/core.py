@@ -44,9 +44,15 @@ FORCED_MAX_YEARS = {
 HEURISTIC_CUTOFF_YEAR = 1800
 PRE_CUTOFF_DEFAULT_DURATION_YEARS = 5
 
-VALID_VIEWS = ("long", "binary", "names", "list", "countries", "conflicts")
+VALID_VIEWS = ("long", "binary", "names", "list", "countries", "conflicts", "records")
 
 _YEAR_RE = re.compile(r"([+-]?\d+)")
+_DATE_RE = re.compile(r"([+-]?\d+)-(\d{2})-(\d{2})")
+
+# Wikidata ``wikibase:timePrecision`` values: 11 = day, 10 = month, 9 = year,
+# anything coarser (decade/century/...) is treated as year-only.
+TIME_PRECISION_DAY = 11
+TIME_PRECISION_MONTH = 10
 
 
 def parse_year(date_str: Optional[str]) -> Optional[int]:
@@ -58,6 +64,45 @@ def parse_year(date_str: Optional[str]) -> Optional[int]:
         return None
     match = _YEAR_RE.search(date_str)
     return int(match.group(1)) if match else None
+
+
+def parse_date_parts(
+    date_str: Optional[str], precision: Optional[int]
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """Split a Wikidata date literal into ``(year, month, day)`` per its real precision.
+
+    Wikidata always serializes a full ``+YYYY-MM-DDTHH:MM:SSZ`` value even
+    when the underlying statement only asserts a year or a month -- the
+    unused components are filled with ``01``. ``precision`` (the statement's
+    ``wikibase:timePrecision``) is what actually tells us which components
+    are real: 11 = day, 10 = month, 9 or coarser = year only. ``None``
+    (no precision available, e.g. hand-built test fixtures) is treated as
+    day precision for backward compatibility.
+    """
+    year = parse_year(date_str)
+    if year is None:
+        return None, None, None
+
+    if precision is not None and precision <= TIME_PRECISION_MONTH - 1:
+        return year, None, None
+
+    match = _DATE_RE.search(date_str)
+    if not match:
+        return year, None, None
+    month = int(match.group(2))
+
+    if precision is not None and precision < TIME_PRECISION_DAY:
+        return year, month, None
+
+    day = int(match.group(3))
+    return year, month, day
+
+
+def _as_int(value: Optional[str]) -> Optional[int]:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_bindings(
@@ -79,9 +124,16 @@ def parse_bindings(
         country = item["countryLabel"]["value"]
         conflict = item["conflictLabel"]["value"]
 
-        start_year = parse_year(item["startDate"]["value"])
+        start_precision = _as_int(item.get("startDatePrecision", {}).get("value"))
+        start_year, start_month, start_day = parse_date_parts(
+            item["startDate"]["value"], start_precision
+        )
+
         raw_end = item["endDate"]["value"] if "endDate" in item else None
-        finish_year = parse_year(raw_end) if raw_end else None
+        end_precision = _as_int(item.get("endDatePrecision", {}).get("value"))
+        finish_year, finish_month, finish_day = (
+            parse_date_parts(raw_end, end_precision) if raw_end else (None, None, None)
+        )
 
         if start_year is None:
             continue
@@ -93,8 +145,12 @@ def parse_bindings(
                 if start_year >= heuristic_cutoff_year
                 else (start_year + pre_cutoff_default_duration_years)
             )
-        else:
-            finish_year = max(finish_year, start_year)
+            finish_month = finish_day = None
+        elif finish_year < start_year:
+            # A data-entry error produced an end before the start; clamp the
+            # year but drop the now-meaningless month/day of that end date.
+            finish_year = start_year
+            finish_month = finish_day = None
 
         country_start = parse_year(item["countryStart"]["value"]) if "countryStart" in item else None
         if "countryEnd" in item:
@@ -116,7 +172,11 @@ def parse_bindings(
                 "country": country,
                 "conflict_name": conflict,
                 "start_year": start_year,
+                "start_month": start_month,
+                "start_day": start_day,
                 "end_year": finish_year,
+                "end_month": finish_month,
+                "end_day": finish_day,
                 "country_start": country_start,
                 "country_end": country_end,
                 "casualties": casualties,
@@ -193,32 +253,74 @@ def clean_dataframe(
     return df
 
 
+def _month_key(year, month):
+    """Sortable (Year, Month) -> single comparable key. Works on scalars or Series."""
+    return year * 12 + (month - 1)
+
+
+def _parse_period(value: Union[str, int], default_month: int) -> tuple[int, Optional[int]]:
+    """Parse a ``from_date``/``to_date`` argument: ``"YYYY"``, ``"YYYY-MM"``, or an int year."""
+    text = str(value)
+    parts = text.split("-")
+    year = int(parts[0])
+    month = int(parts[1]) if len(parts) > 1 and parts[1] else None
+    return year, (month if month is not None else default_month)
+
+
+def _period_label(years: pd.Series, months: pd.Series) -> pd.Series:
+    """Format (Year, Month) columns as sortable ``"YYYY-MM"`` labels."""
+    return years.astype(int).astype(str).str.zfill(4) + "-" + months.astype(int).astype(str).str.zfill(2)
+
+
 def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> pd.DataFrame:
-    """Build the dense Country x Year long-format grid from cleaned records."""
+    """Build the dense Country x Year x Month long-format grid from cleaned records.
+
+    Month resolution uses the real month/day precision captured from
+    Wikidata when a record has it (``start_month``/``end_month``); when a
+    record only carries year precision, it is treated as covering the whole
+    year (months 1-12) rather than fabricating a specific month.
+    """
     countries = sorted(df_clean["country"].unique()) if not df_clean.empty else []
     years = range(start_year, end_year + 1)
+    months = range(1, 13)
 
     grid = pd.DataFrame(
         [
-            {"Country": c, "Year": y, "War_State": 0, "Active_Conflicts": "", "Duration_Estimated": False}
+            {
+                "Country": c,
+                "Year": y,
+                "Month": m,
+                "War_State": 0,
+                "Active_Conflicts": "",
+                "Duration_Estimated": False,
+            }
             for c in countries
             for y in years
+            for m in months
         ]
     )
     if grid.empty:
         return grid
 
-    grid = grid.set_index(["Country", "Year"])
+    grid = grid.set_index(["Country", "Year", "Month"])
+
+    def _month_or(row: pd.Series, col: str, default: int) -> int:
+        value = row.get(col)
+        return default if value is None or pd.isna(value) else int(value)
 
     for _, row in df_clean.iterrows():
         c = row["country"]
-        in_y = max(row["start_year"], start_year)
-        fi_y = min(row["end_year"], end_year)
+        start_k = max(
+            _month_key(row["start_year"], _month_or(row, "start_month", 1)), _month_key(start_year, 1)
+        )
+        end_k = min(_month_key(row["end_year"], _month_or(row, "end_month", 12)), _month_key(end_year, 12))
         name = row["conflict_name"]
         estimated = bool(row.get("duration_estimated", False))
 
-        for y in range(in_y, fi_y + 1):
-            key = (c, y)
+        for k in range(start_k, end_k + 1):
+            y, m = divmod(k, 12)
+            m += 1
+            key = (c, y, m)
             if key not in grid.index:
                 continue
             grid.at[key, "War_State"] = 1
@@ -228,6 +330,43 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
                 grid.at[key, "Duration_Estimated"] = True
 
     return grid.reset_index()
+
+
+def build_records_view(df_clean: pd.DataFrame) -> pd.DataFrame:
+    """Build the one-row-per-conflict records table with explicit date-part columns."""
+    columns = [
+        "Country",
+        "Conflict_Name",
+        "Start_Year",
+        "Start_Month",
+        "Start_Day",
+        "End_Year",
+        "End_Month",
+        "End_Day",
+        "Duration_Estimated",
+        "Casualties",
+    ]
+    if df_clean.empty:
+        return pd.DataFrame(columns=columns)
+
+    records = df_clean.rename(
+        columns={
+            "country": "Country",
+            "conflict_name": "Conflict_Name",
+            "start_year": "Start_Year",
+            "start_month": "Start_Month",
+            "start_day": "Start_Day",
+            "end_year": "End_Year",
+            "end_month": "End_Month",
+            "end_day": "End_Day",
+            "duration_estimated": "Duration_Estimated",
+            "casualties": "Casualties",
+        }
+    )
+    for col in columns:
+        if col not in records.columns:
+            records[col] = None
+    return records[columns].reset_index(drop=True)
 
 
 class HistWarDB:
@@ -288,6 +427,7 @@ class HistWarDB:
         self.heuristic_cutoff_year = heuristic_cutoff_year
         self.pre_cutoff_duration_years = pre_cutoff_duration_years
         self.df_long: Optional[pd.DataFrame] = None
+        self.df_records: Optional[pd.DataFrame] = None
 
         if auto_fetch:
             self.fetch_data()
@@ -339,8 +479,9 @@ class HistWarDB:
         """
         if not records:
             self.df_long = pd.DataFrame(
-                columns=["Country", "Year", "War_State", "Active_Conflicts", "Duration_Estimated"]
+                columns=["Country", "Year", "Month", "War_State", "Active_Conflicts", "Duration_Estimated"]
             )
+            self.df_records = build_records_view(pd.DataFrame())
             return
 
         df_raw = pd.DataFrame(records)
@@ -348,6 +489,7 @@ class HistWarDB:
             df_raw, self.start_year, self.end_year, min_casualties=self.min_casualties
         )
         self.df_long = build_long_grid(df_clean, self.start_year, self.end_year)
+        self.df_records = build_records_view(df_clean)
 
     # -- Query interface -----------------------------------------------------
 
@@ -366,6 +508,9 @@ class HistWarDB:
         if view not in VALID_VIEWS:
             raise ValueError(f"Invalid view {view!r}. Choose from: {', '.join(VALID_VIEWS)}")
 
+        if view == "records":
+            return self._query_records(countries, from_date, to_date, keyword)
+
         df = self.df_long.copy()
 
         if countries:
@@ -374,9 +519,11 @@ class HistWarDB:
             df = df[df["Country"].str.casefold().isin(wanted)]
 
         if from_date is not None:
-            df = df[df["Year"] >= int(str(from_date).split("-")[0])]
+            from_y, from_m = _parse_period(from_date, default_month=1)
+            df = df[_month_key(df["Year"], df["Month"]) >= _month_key(from_y, from_m)]
         if to_date is not None:
-            df = df[df["Year"] <= int(str(to_date).split("-")[0])]
+            to_y, to_m = _parse_period(to_date, default_month=12)
+            df = df[_month_key(df["Year"], df["Month"]) <= _month_key(to_y, to_m)]
         if only_in_war:
             df = df[df["War_State"] == 1]
         if keyword:
@@ -384,14 +531,52 @@ class HistWarDB:
 
         return self._render_view(df, view)
 
+    def _query_records(
+        self,
+        countries: Optional[Union[str, Sequence[str]]],
+        from_date: Optional[Union[str, int]],
+        to_date: Optional[Union[str, int]],
+        keyword: Optional[str],
+    ) -> pd.DataFrame:
+        df = self.df_records.copy()
+
+        if countries:
+            c_list = [countries] if isinstance(countries, str) else list(countries)
+            wanted = {c.casefold() for c in c_list}
+            df = df[df["Country"].str.casefold().isin(wanted)]
+
+        if from_date is not None:
+            from_y, from_m = _parse_period(from_date, default_month=1)
+            from_k = _month_key(from_y, from_m or 1)
+            end_k = _month_key(df["End_Year"], df["End_Month"].fillna(12))
+            df = df[end_k >= from_k]
+        if to_date is not None:
+            to_y, to_m = _parse_period(to_date, default_month=12)
+            to_k = _month_key(to_y, to_m or 12)
+            start_k = _month_key(df["Start_Year"], df["Start_Month"].fillna(1))
+            df = df[start_k <= to_k]
+        if keyword:
+            df = df[df["Conflict_Name"].str.contains(keyword, case=False, na=False, regex=False)]
+
+        return df.reset_index(drop=True)
+
     @staticmethod
     def _render_view(df: pd.DataFrame, view: str):
         if view == "long":
             return df
         if view == "binary":
-            return df.pivot(index="Country", columns="Year", values="War_State").fillna(0).astype(int)
+            return (
+                df.assign(Period=_period_label(df["Year"], df["Month"]))
+                .pivot(index="Country", columns="Period", values="War_State")
+                .fillna(0)
+                .astype(int)
+            )
         if view == "names":
-            return df.pivot(index="Country", columns="Year", values="Active_Conflicts").fillna("")
+            return (
+                df.assign(Period=_period_label(df["Year"], df["Month"]))
+                .pivot(index="Country", columns="Period", values="Active_Conflicts")
+                .fillna("")
+            )
         if view == "list":
             return sorted({item for s in df["Active_Conflicts"].dropna() for item in s.split("; ") if item})
         if view == "countries":
@@ -425,12 +610,14 @@ class HistWarDB:
         from_year = self.start_year if from_year is None else from_year
         to_year = self.end_year if to_year is None else to_year
 
-        df_range = self.df_long[(self.df_long["Year"] >= from_year) & (self.df_long["Year"] <= to_year)]
+        df_range = self.df_long[
+            (self.df_long["Year"] >= from_year) & (self.df_long["Year"] <= to_year)
+        ].assign(Period=lambda d: _period_label(d["Year"], d["Month"]))
         top_countries = df_range.groupby("Country")["War_State"].sum().nlargest(top_n).index.tolist()
         df_filtered = df_range[df_range["Country"].isin(top_countries)]
 
-        matrix_val = df_filtered.pivot(index="Country", columns="Year", values="War_State").fillna(0)
-        matrix_txt = df_filtered.pivot(index="Country", columns="Year", values="Active_Conflicts").fillna(
+        matrix_val = df_filtered.pivot(index="Country", columns="Period", values="War_State").fillna(0)
+        matrix_txt = df_filtered.pivot(index="Country", columns="Period", values="Active_Conflicts").fillna(
             "No recorded conflicts"
         )
 
@@ -440,16 +627,16 @@ class HistWarDB:
                 x=matrix_val.columns,
                 y=matrix_val.index,
                 text=matrix_txt.values,
-                hovertemplate="<b>Country:</b> %{y}<br><b>Year:</b> %{x}<br><b>Conflict(s):</b> %{text}<extra></extra>",
+                hovertemplate="<b>Country:</b> %{y}<br><b>Period:</b> %{x}<br><b>Conflict(s):</b> %{text}<extra></extra>",
                 colorscale=[[0, "#ffffff"], [1, "#d9534f"]],
                 showscale=False,
             )
         )
         fig.update_layout(
-            title=f"Global War State from Wikidata (Sovereign + Historical States) ({from_year}-{to_year})",
-            xaxis_title="Year",
+            title=f"Global War State ({from_year}-{to_year})",
+            xaxis_title="Year-Month",
             yaxis_title="Country / Historical State",
-            xaxis={'dtick': 10},
+            xaxis={'dtick': 120},
             height=700,
         )
         return fig

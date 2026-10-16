@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from histwardb.core import clean_dataframe, parse_bindings, parse_year
+from histwardb.core import clean_dataframe, parse_bindings, parse_date_parts, parse_year
 
 
 @pytest.mark.parametrize(
@@ -19,11 +19,54 @@ def test_parse_year(value, expected):
     assert parse_year(value) == expected
 
 
+@pytest.mark.parametrize(
+    "value,precision,expected",
+    [
+        ("1939-09-01T00:00:00Z", 11, (1939, 9, 1)),  # day precision
+        ("1939-09-01T00:00:00Z", 10, (1939, 9, None)),  # month precision
+        ("1939-01-01T00:00:00Z", 9, (1939, None, None)),  # year precision
+        ("1939-01-01T00:00:00Z", 7, (1939, None, None)),  # century: still year-only
+        ("1939-01-01T00:00:00Z", None, (1939, 1, 1)),  # no precision info -> assume day
+        (None, 11, (None, None, None)),
+    ],
+)
+def test_parse_date_parts(value, precision, expected):
+    assert parse_date_parts(value, precision) == expected
+
+
 def test_parse_bindings_fills_missing_end_date_recent(sample_bindings):
     records = parse_bindings(sample_bindings, end_year=2026)
     narnia = next(r for r in records if r["country"] == "Narnia")
     assert narnia["start_year"] == 2020
     assert narnia["end_year"] == 2026  # no end date, recent conflict -> runs to dataset end
+    assert narnia["end_month"] is None  # estimated end -> no fabricated month/day
+
+
+def test_parse_bindings_captures_month_and_day_precision():
+    bindings = [
+        {
+            "countryLabel": {"value": "France"},
+            "conflictLabel": {"value": "Precise War"},
+            "startDate": {"value": "1939-09-01T00:00:00Z"},
+            "startDatePrecision": {"value": "11"},
+            "endDate": {"value": "1945-05-08T00:00:00Z"},
+            "endDatePrecision": {"value": "11"},
+        },
+        {
+            "countryLabel": {"value": "Narnia"},
+            "conflictLabel": {"value": "Imprecise War"},
+            "startDate": {"value": "1950-01-01T00:00:00Z"},
+            "startDatePrecision": {"value": "9"},
+        },
+    ]
+    records = parse_bindings(bindings, end_year=2026)
+    precise = next(r for r in records if r["country"] == "France")
+    assert (precise["start_month"], precise["start_day"]) == (9, 1)
+    assert (precise["end_month"], precise["end_day"]) == (5, 8)
+
+    imprecise = next(r for r in records if r["country"] == "Narnia")
+    assert imprecise["start_month"] is None
+    assert imprecise["start_day"] is None
 
 
 def test_parse_bindings_skips_entries_without_start_date():

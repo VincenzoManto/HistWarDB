@@ -52,12 +52,18 @@ def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
     country_values = " ".join(COUNTRY_TYPES)
 
     return f"""
-    SELECT DISTINCT ?conflictLabel ?countryLabel ?startDate ?endDate ?countryStart ?countryEnd ?countryEndFallback ?casualties WHERE {{
+    SELECT DISTINCT ?conflictLabel ?countryLabel ?startDate ?startDatePrecision ?endDate ?endDatePrecision ?countryStart ?countryEnd ?countryEndFallback ?casualties WHERE {{
         ?conflict wdt:P31/wdt:P279* {CONFLICT_CLASS} ;
                 wdt:P710 ?country ;
-                wdt:P580 ?startDate .
+                p:P580/psv:P580 ?startNode .
+        ?startNode wikibase:timeValue ?startDate ;
+                   wikibase:timePrecision ?startDatePrecision .
 
-        OPTIONAL {{ ?conflict wdt:P582 ?endDate . }}
+        OPTIONAL {{
+            ?conflict p:P582/psv:P582 ?endNode .
+            ?endNode wikibase:timeValue ?endDate ;
+                     wikibase:timePrecision ?endDatePrecision .
+        }}
         OPTIONAL {{ ?conflict {CASUALTIES_PROPERTY} ?casualties . }}
 
         {excluded_conflicts}

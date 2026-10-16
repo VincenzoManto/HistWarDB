@@ -26,3 +26,12 @@ def test_build_sparql_query_is_valid_looking_sparql():
     q = build_sparql_query(1900, 1925, 2026)
     assert q.strip().startswith("SELECT DISTINCT")
     assert q.count("{") == q.count("}")
+
+
+def test_build_sparql_query_fetches_date_precision():
+    q = build_sparql_query(1900, 1925, 2026)
+    assert "psv:P580" in q
+    assert "psv:P582" in q
+    assert "wikibase:timePrecision" in q
+    assert "?startDatePrecision" in q
+    assert "?endDatePrecision" in q
