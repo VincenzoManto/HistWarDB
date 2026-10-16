@@ -3,6 +3,16 @@
 All notable changes to HistWarDB. Data snapshots are listed under the
 release that first ships them.
 
+## Unreleased
+
+### Added
+- Monthly resolution: the long grid is now `Country x Year x Month`, and
+  every participation carries `start_month`/`start_day`/`end_month`/`end_day`
+  (plus unclipped `war_start_month`/`war_start_day`/`war_end_month`/
+  `war_end_day`) to the precision Wikidata's `wikibase:timePrecision`
+  actually records, never fabricated. `from_date`/`to_date` accept
+  `"YYYY-MM"`; `binary`/`names` pivot on `"YYYY-MM"` periods.
+
 ## 0.4.0 - 2026-10-14
 
 First release whose live fetch works end to end; 0.3.0 returns an empty

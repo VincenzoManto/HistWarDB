@@ -24,6 +24,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Optional, Union
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -115,9 +116,17 @@ RECORD_COLUMNS = [
     "conflict_name",
     "conflict_qid",
     "start_year",
+    "start_month",
+    "start_day",
     "end_year",
+    "end_month",
+    "end_day",
     "war_start_year",
+    "war_start_month",
+    "war_start_day",
     "war_end_year",
+    "war_end_month",
+    "war_end_day",
     "duration_estimated",
     "casualties",
     "country_start",
@@ -138,6 +147,10 @@ _RECORD_DEFAULTS = {
     "country_qid": None,
     "conflict_qid": None,
     "iso3": None,
+    "start_month": None,
+    "start_day": None,
+    "end_month": None,
+    "end_day": None,
     "duration_estimated": False,
     "casualties": None,
     "conflict_type": None,
@@ -155,6 +168,7 @@ _RECORD_DEFAULTS = {
 LONG_COLUMNS = [
     "Country",
     "Year",
+    "Month",
     "War_State",
     "Active_Conflicts",
     "Duration_Estimated",
@@ -175,7 +189,13 @@ SNAPSHOT_DATA_FILE = "participations.csv"
 SNAPSHOT_METADATA_FILE = "metadata.json"
 
 _YEAR_RE = re.compile(r"([+-]?\d+)")
+_DATE_RE = re.compile(r"([+-]?\d+)-(\d{2})-(\d{2})")
 _QID_RE = re.compile(r"^Q\d+$")
+
+# Wikidata ``wikibase:timePrecision`` values: 11 = day, 10 = month, 9 = year,
+# anything coarser (decade/century/...) is treated as year-only.
+TIME_PRECISION_DAY = 11
+TIME_PRECISION_MONTH = 10
 
 
 class FetchError(RuntimeError):
@@ -191,6 +211,45 @@ def parse_year(date_str: Optional[str]) -> Optional[int]:
         return None
     match = _YEAR_RE.search(date_str)
     return int(match.group(1)) if match else None
+
+
+def parse_date_parts(
+    date_str: Optional[str], precision: Optional[int]
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """Split a Wikidata date literal into ``(year, month, day)`` per its real precision.
+
+    Wikidata always serializes a full ``+YYYY-MM-DDTHH:MM:SSZ`` value even
+    when the underlying statement only asserts a year or a month -- the
+    unused components are filled with ``01``. ``precision`` (the statement's
+    ``wikibase:timePrecision``) is what actually tells us which components
+    are real: 11 = day, 10 = month, 9 or coarser = year only. ``None``
+    (no precision available, e.g. hand-built test fixtures) is treated as
+    day precision for backward compatibility.
+    """
+    year = parse_year(date_str)
+    if year is None:
+        return None, None, None
+
+    if precision is not None and precision <= TIME_PRECISION_MONTH - 1:
+        return year, None, None
+
+    match = _DATE_RE.search(date_str)
+    if not match:
+        return year, None, None
+    month = int(match.group(2))
+
+    if precision is not None and precision < TIME_PRECISION_DAY:
+        return year, month, None
+
+    day = int(match.group(3))
+    return year, month, day
+
+
+def _as_int(value: Optional[str]) -> Optional[int]:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def qid_from_uri(uri: Optional[str]) -> Optional[str]:
@@ -247,6 +306,10 @@ def _make_record(
     missing_end: str,
     heuristic_cutoff_year: int,
     pre_cutoff_duration_years: int,
+    start_month: Optional[int] = None,
+    start_day: Optional[int] = None,
+    finish_month: Optional[int] = None,
+    finish_day: Optional[int] = None,
 ) -> Optional[dict]:
     if start_year is None:
         return None
@@ -258,8 +321,12 @@ def _make_record(
         )
         if finish_year is None:
             return None
-    else:
-        finish_year = max(finish_year, start_year)
+        finish_month = finish_day = None
+    elif finish_year < start_year:
+        # A data-entry error produced an end before the start; clamp the
+        # year but drop the now-meaningless month/day of that end date.
+        finish_year = start_year
+        finish_month = finish_day = None
 
     return {
         "country": country,
@@ -268,7 +335,11 @@ def _make_record(
         "conflict_name": conflict,
         "conflict_qid": conflict_qid,
         "start_year": start_year,
+        "start_month": start_month,
+        "start_day": start_day,
         "end_year": finish_year,
+        "end_month": finish_month,
+        "end_day": finish_day,
         "duration_estimated": duration_estimated,
         "casualties": casualties,
         "country_start": country_start,
@@ -306,14 +377,25 @@ def parse_bindings(
         else:
             country_end = None
 
+        start_precision = _as_int(item.get("startDatePrecision", {}).get("value"))
+        start_year, start_month, start_day = parse_date_parts(item["startDate"]["value"], start_precision)
+        end_precision = _as_int(item.get("endDatePrecision", {}).get("value"))
+        finish_year, finish_month, finish_day = (
+            parse_date_parts(raw_end, end_precision) if raw_end else (None, None, None)
+        )
+
         record = _make_record(
             country=item["countryLabel"]["value"],
             country_qid=qid_from_uri(item["country"]["value"]) if "country" in item else None,
             iso3=item["iso3"]["value"] if "iso3" in item else None,
             conflict=item["conflictLabel"]["value"],
             conflict_qid=qid_from_uri(item["conflict"]["value"]) if "conflict" in item else None,
-            start_year=parse_year(item["startDate"]["value"]),
-            finish_year=parse_year(raw_end) if raw_end else None,
+            start_year=start_year,
+            start_month=start_month,
+            start_day=start_day,
+            finish_year=finish_year,
+            finish_month=finish_month,
+            finish_day=finish_day,
             country_start=parse_year(item["countryStart"]["value"]) if "countryStart" in item else None,
             country_end=country_end,
             casualties=_parse_number(item["casualties"]["value"]) if "casualties" in item else None,
@@ -399,14 +481,25 @@ def build_records(
         country = countries.get(country_qid, {})
         raw_end = item["endDate"]["value"] if "endDate" in item else None
 
+        start_precision = _as_int(item.get("startDatePrecision", {}).get("value"))
+        start_year, start_month, start_day = parse_date_parts(item["startDate"]["value"], start_precision)
+        end_precision = _as_int(item.get("endDatePrecision", {}).get("value"))
+        finish_year, finish_month, finish_day = (
+            parse_date_parts(raw_end, end_precision) if raw_end else (None, None, None)
+        )
+
         record = _make_record(
             country=country.get("label") or country_qid,
             country_qid=country_qid,
             iso3=country.get("iso3"),
             conflict=conflict.get("label") or conflict_qid,
             conflict_qid=conflict_qid,
-            start_year=parse_year(item["startDate"]["value"]),
-            finish_year=parse_year(raw_end) if raw_end else None,
+            start_year=start_year,
+            start_month=start_month,
+            start_day=start_day,
+            finish_year=finish_year,
+            finish_month=finish_month,
+            finish_day=finish_day,
             country_start=country.get("start"),
             country_end=country.get("end"),
             casualties=conflict.get("casualties"),
@@ -453,6 +546,8 @@ def _with_record_defaults(df: pd.DataFrame) -> pd.DataFrame:
     df["country_start"] = pd.to_numeric(df["country_start"], errors="coerce")
     df["country_end"] = pd.to_numeric(df["country_end"], errors="coerce")
     df["casualties"] = pd.to_numeric(df["casualties"], errors="coerce")
+    for column in ("start_month", "start_day", "end_month", "end_day"):
+        df[column] = pd.to_numeric(df[column], errors="coerce")
     df["participant_start"] = pd.to_numeric(df["participant_start"], errors="coerce")
     df["participant_end"] = pd.to_numeric(df["participant_end"], errors="coerce")
     df["via_coalition"] = df["via_coalition"].astype(bool)
@@ -492,6 +587,41 @@ def _disambiguate_labels(df: pd.DataFrame, label_col: str, qid_col: str) -> pd.D
     return df
 
 
+def _correlated_war_date_parts(df: pd.DataFrame) -> pd.DataFrame:
+    """Month/day of the ``war_start_year``/``war_end_year`` chosen per (conflict, country) group.
+
+    ``war_start_year``/``war_end_year`` are picked via ``min``/``max`` over
+    possibly several raw rows per group (duplicate chunk fetches, or a
+    conflict with more than one recorded end date). Month/day must come from
+    the *same* row as the chosen year, not independently -- a plain
+    ``min``/``max`` per column could mix the year of one row with the
+    month of another.
+    """
+    group_cols = ["conflict_qid", "country_qid"]
+
+    start_md = (
+        df.sort_values(group_cols + ["start_year"])
+        .drop_duplicates(group_cols, keep="first")
+        .set_index(group_cols)[["start_month", "start_day"]]
+        .rename(columns={"start_month": "war_start_month", "start_day": "war_start_day"})
+    )
+
+    def _end_month_day(frame: pd.DataFrame) -> pd.DataFrame:
+        return (
+            frame.sort_values(group_cols + ["end_year"])
+            .drop_duplicates(group_cols, keep="last")
+            .set_index(group_cols)[["end_month", "end_day"]]
+            .rename(columns={"end_month": "war_end_month", "end_day": "war_end_day"})
+        )
+
+    # A recorded end date beats an imputed one, mirroring war_end_year itself.
+    observed_end = _end_month_day(df[~df["duration_estimated"]])
+    any_end = _end_month_day(df)
+    end_md = observed_end.combine_first(any_end)
+
+    return start_md.join(end_md, how="outer")
+
+
 def clean_dataframe(
     df_raw: pd.DataFrame,
     start_year: int,
@@ -522,6 +652,11 @@ def clean_dataframe(
 
     ``start_year``/``end_year`` in the result are the clipped participation
     years; ``war_start_year``/``war_end_year`` keep the conflict's own dates.
+    Each also has a ``*_month``/``*_day`` counterpart, populated only to the
+    precision Wikidata actually recorded (see :func:`parse_date_parts`); the
+    clipped ``start_month``/``end_month``/``*_day`` are ``None`` whenever the
+    clip comes from a participant or country-lifespan bound rather than the
+    war's own date, since those bounds are year-only.
     """
     if df_raw.empty:
         return df_raw
@@ -585,12 +720,21 @@ def clean_dataframe(
     )
     parts["war_end_year"] = parts["_observed_end"].fillna(parts["_any_end"])
     parts = parts.join(lifespans, on="country_qid")
+    parts = parts.join(_correlated_war_date_parts(df), on=["conflict_qid", "country_qid"])
 
     # Clip to the state's lifespan: a state cannot be at war in a year in
     # which it did not exist. Missing lifespan data imposes no constraint.
     parts["start_year"] = parts[["war_start_year", "participant_start", "country_start"]].max(axis=1)
     parts["end_year"] = parts[["war_end_year", "participant_end", "country_end"]].min(axis=1)
     parts = parts[parts["start_year"] <= parts["end_year"]]
+
+    # The clipped start/end only keep real month/day precision when the war's
+    # own date is what actually won the clip -- a participant/country-lifespan
+    # bound is year-only, so dropping below that bound forfeits the precision.
+    parts["start_month"] = parts["war_start_month"].where(parts["start_year"] == parts["war_start_year"])
+    parts["start_day"] = parts["war_start_day"].where(parts["start_year"] == parts["war_start_year"])
+    parts["end_month"] = parts["war_end_month"].where(parts["end_year"] == parts["war_end_year"])
+    parts["end_day"] = parts["war_end_day"].where(parts["end_year"] == parts["war_end_year"])
 
     # Discard participations entirely outside the requested window.
     parts = parts[(parts["end_year"] >= start_year) & (parts["start_year"] <= end_year)].copy()
@@ -599,6 +743,9 @@ def clean_dataframe(
 
     for column in ("start_year", "end_year", "war_start_year", "war_end_year"):
         parts[column] = parts[column].astype(int)
+    for column in ("start_month", "start_day", "end_month", "end_day", "war_start_month",
+                   "war_start_day", "war_end_month", "war_end_day"):
+        parts[column] = pd.to_numeric(parts[column], errors="coerce").astype("Int64")
 
     parts = _disambiguate_labels(parts, "country", "country_qid")
     parts = _disambiguate_labels(parts, "conflict_name", "conflict_qid")
@@ -606,8 +753,31 @@ def clean_dataframe(
     return parts[RECORD_COLUMNS].sort_values(["country", "start_year", "conflict_name"]).reset_index(drop=True)
 
 
+def _month_key(year, month):
+    """Sortable (Year, Month) -> single comparable key. Works on scalars or Series."""
+    return year * 12 + (month - 1)
+
+
+def _parse_period(value: Union[str, int], default_month: int) -> tuple[int, int]:
+    """Parse a ``from_date``/``to_date`` argument: ``"YYYY"``, ``"YYYY-MM"``, or an int year."""
+    parts = str(value).split("-")
+    year = int(parts[0])
+    month = int(parts[1]) if len(parts) > 1 and parts[1] else default_month
+    return year, month
+
+
+def _period_label(years: pd.Series, months: pd.Series) -> pd.Series:
+    """Format (Year, Month) columns as sortable ``"YYYY-MM"`` labels."""
+    return years.astype(int).astype(str).str.zfill(4) + "-" + months.astype(int).astype(str).str.zfill(2)
+
+
 def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> pd.DataFrame:
-    """Build the dense Country x Year long-format grid from cleaned records.
+    """Build the dense Country x Year x Month long-format grid from cleaned records.
+
+    Month resolution uses the real month captured from Wikidata when a
+    record has it (clipped ``start_month``/``end_month``); a record known
+    only to year precision is treated as covering all 12 months of that
+    year, rather than fabricating a specific month.
 
     Besides ``War_State`` and ``Active_Conflicts`` each cell carries:
 
@@ -616,56 +786,82 @@ def build_long_grid(df_clean: pd.DataFrame, start_year: int, end_year: int) -> p
     * ``State_Exists`` -- 0 when the year is outside the state's known
       lifespan, so "no war" can be told apart from "no state";
     * ``War_Imputed`` -- 1 when the cell is at war *only* because a
-      conflict with no recorded end date was extended past its start year
+      conflict with no recorded end date was extended past its start month
       (stricter than ``Duration_Estimated``: a cell also covered by a dated
-      conflict, or in the start year itself, is 0).
+      conflict, or in the start month itself, is 0).
     """
     if df_clean.empty:
         return pd.DataFrame(columns=LONG_COLUMNS)
 
-    active: dict[tuple, set] = {}
-    observed: set[tuple] = set()
-    estimated: set[tuple] = set()
-    for row in df_clean.itertuples(index=False):
-        first = max(row.start_year, start_year)
-        last = min(row.end_year, end_year)
-        for year in range(first, last + 1):
-            key = (row.country_qid, year)
-            active.setdefault(key, set()).add(row.conflict_name)
-            if row.duration_estimated:
-                estimated.add(key)
-            if not row.duration_estimated or year == row.war_start_year:
-                observed.add(key)
+    # Each cleaned record covers an inclusive [first_k, last_k] range of
+    # month keys; "explode" that range into one row per (record, month) so
+    # the per-cell aggregation below is a vectorized groupby instead of a
+    # Python-level loop over every country x year x month cell (which does
+    # not scale to the full dataset's ~300 countries x ~330 years x 12).
+    df = df_clean.reset_index(drop=True)
+    start_m = df["start_month"].astype("float64").fillna(1).astype(int).to_numpy()
+    end_m = df["end_month"].astype("float64").fillna(12).astype(int).to_numpy()
+    war_start_m = df["war_start_month"].astype("float64").fillna(1).astype(int).to_numpy()
+
+    first_k = np.maximum(_month_key(df["start_year"].to_numpy(), start_m), _month_key(start_year, 1))
+    last_k = np.minimum(_month_key(df["end_year"].to_numpy(), end_m), _month_key(end_year, 12))
+    war_start_k = _month_key(df["war_start_year"].to_numpy(), war_start_m)
+
+    valid = first_k <= last_k
+    df = df[valid].reset_index(drop=True)
+    first_k, last_k, war_start_k = first_k[valid], last_k[valid], war_start_k[valid]
+
+    if len(df) == 0:
+        active = pd.DataFrame(
+            columns=["country_qid", "Year", "Month", "Active_Conflicts", "Duration_Estimated", "War_State", "War_Imputed"]
+        )
+    else:
+        lengths = last_k - first_k + 1
+        repeat_idx = np.repeat(np.arange(len(df)), lengths)
+        k_values = np.concatenate([np.arange(f, l + 1) for f, l in zip(first_k, last_k)])
+
+        exploded = df.iloc[repeat_idx].reset_index(drop=True)
+        exploded["Year"], month0 = np.divmod(k_values, 12)
+        exploded["Month"] = month0 + 1
+        exploded["_observed"] = (~exploded["duration_estimated"].to_numpy()) | (k_values == war_start_k[repeat_idx])
+
+        active = (
+            exploded.groupby(["country_qid", "Year", "Month"])
+            .agg(
+                Active_Conflicts=("conflict_name", lambda s: "; ".join(sorted(set(s)))),
+                Duration_Estimated=("duration_estimated", "any"),
+                _any_observed=("_observed", "any"),
+            )
+            .reset_index()
+        )
+        active["War_State"] = 1
+        active["War_Imputed"] = (~active["_any_observed"]).astype(int)
+        active = active.drop(columns="_any_observed")
 
     countries = df_clean.drop_duplicates("country_qid").sort_values("country")
-    rows = []
-    for country in countries.itertuples(index=False):
-        born = country.country_start
-        died = country.country_end
-        for year in range(start_year, end_year + 1):
-            key = (country.country_qid, year)
-            names = active.get(key)
-            exists = (pd.isna(born) or year >= born) and (pd.isna(died) or year <= died)
-            rows.append(
-                {
-                    "Country": country.country,
-                    "Year": year,
-                    "War_State": 1 if names else 0,
-                    "Active_Conflicts": "; ".join(sorted(names)) if names else "",
-                    "Duration_Estimated": key in estimated,
-                    "Country_QID": country.country_qid,
-                    "ISO3": country.iso3,
-                    "COW_Code": getattr(country, "cow_code", pd.NA),
-                    "GW_Code": getattr(country, "gw_code", pd.NA),
-                    "State_Exists": 1 if exists else 0,
-                    "War_Imputed": 1 if names and key not in observed else 0,
-                }
-            )
+    years_arr = np.arange(start_year, end_year + 1)
+    months_arr = np.arange(1, 13)
+    ym = pd.DataFrame({"Year": np.repeat(years_arr, 12), "Month": np.tile(months_arr, len(years_arr))})
+    skeleton = countries.merge(ym, how="cross")
 
-    grid = pd.DataFrame(rows, columns=LONG_COLUMNS)
+    born, died = skeleton["country_start"], skeleton["country_end"]
+    skeleton["State_Exists"] = (
+        (born.isna() | (skeleton["Year"] >= born)) & (died.isna() | (skeleton["Year"] <= died))
+    ).astype(int)
+
+    grid = skeleton.merge(active, on=["country_qid", "Year", "Month"], how="left")
+    grid["War_State"] = grid["War_State"].fillna(0).astype(int)
+    grid["Active_Conflicts"] = grid["Active_Conflicts"].fillna("")
+    grid["Duration_Estimated"] = grid["Duration_Estimated"].astype("boolean").fillna(False).astype(bool)
+    grid["War_Imputed"] = grid["War_Imputed"].fillna(0).astype(int)
+
+    grid = grid.rename(columns={"country": "Country", "country_qid": "Country_QID", "iso3": "ISO3"})
+    grid["COW_Code"] = grid["cow_code"] if "cow_code" in grid.columns else pd.NA
+    grid["GW_Code"] = grid["gw_code"] if "gw_code" in grid.columns else pd.NA
     for column in ("COW_Code", "GW_Code"):
         grid[column] = grid[column].astype("Int64")
-    return grid
+
+    return grid.sort_values(["Country", "Year", "Month"]).reset_index(drop=True)[LONG_COLUMNS]
 
 
 def load_crosswalk() -> pd.DataFrame:
@@ -1104,7 +1300,10 @@ class HistWarDB:
 
         ``countries`` matches exactly (case-insensitive) on the country
         label, its Wikidata QID or its ISO 3166-1 alpha-3 code.
-        ``only_existing`` drops country-years outside the state's known
+        ``from_date``/``to_date`` accept a year (``"YYYY"`` or ``int``) or a
+        specific month (``"YYYY-MM"``); an omitted month defaults to January
+        for ``from_date`` and December for ``to_date``.
+        ``only_existing`` drops country-months outside the state's known
         lifespan; in the ``binary`` view those cells then read ``<NA>``
         instead of ``0``.
         """
@@ -1128,9 +1327,11 @@ class HistWarDB:
             df = df[keys[0].isin(wanted) | keys[1].isin(wanted) | keys[2].isin(wanted)]
 
         if from_date is not None:
-            df = df[df["Year"] >= int(str(from_date).split("-")[0])]
+            from_y, from_m = _parse_period(from_date, default_month=1)
+            df = df[_month_key(df["Year"], df["Month"]) >= _month_key(from_y, from_m)]
         if to_date is not None:
-            df = df[df["Year"] <= int(str(to_date).split("-")[0])]
+            to_y, to_m = _parse_period(to_date, default_month=12)
+            df = df[_month_key(df["Year"], df["Month"]) <= _month_key(to_y, to_m)]
         if only_existing:
             df = df[df["State_Exists"] == 1]
         if only_in_war:
@@ -1145,10 +1346,16 @@ class HistWarDB:
         if view == "long":
             return df
         if view == "binary":
-            wide = df.pivot(index="Country", columns="Year", values="War_State")
+            wide = df.assign(Period=_period_label(df["Year"], df["Month"])).pivot(
+                index="Country", columns="Period", values="War_State"
+            )
             return wide.astype("Int64") if only_existing else wide.fillna(0).astype(int)
         if view == "names":
-            return df.pivot(index="Country", columns="Year", values="Active_Conflicts").fillna("")
+            return (
+                df.assign(Period=_period_label(df["Year"], df["Month"]))
+                .pivot(index="Country", columns="Period", values="Active_Conflicts")
+                .fillna("")
+            )
         if view == "list":
             return sorted({item for s in df["Active_Conflicts"].dropna() for item in s.split("; ") if item})
         if view == "countries":
@@ -1184,7 +1391,9 @@ class HistWarDB:
         from_year = self.start_year if from_year is None else from_year
         to_year = self.end_year if to_year is None else to_year
 
-        df_range = self.df_long[(self.df_long["Year"] >= from_year) & (self.df_long["Year"] <= to_year)]
+        df_range = self.df_long[
+            (self.df_long["Year"] >= from_year) & (self.df_long["Year"] <= to_year)
+        ].assign(Period=lambda d: _period_label(d["Year"], d["Month"]))
         top_countries = df_range.groupby("Country")["War_State"].sum().nlargest(top_n).index.tolist()
         df_filtered = df_range[df_range["Country"].isin(top_countries)].copy()
 
@@ -1195,8 +1404,8 @@ class HistWarDB:
         )
         df_filtered["_text"] = df_filtered["_text"].where(~missing, "State did not exist")
 
-        matrix_val = df_filtered.pivot(index="Country", columns="Year", values="_cell").fillna(0)
-        matrix_txt = df_filtered.pivot(index="Country", columns="Year", values="_text").fillna(
+        matrix_val = df_filtered.pivot(index="Country", columns="Period", values="_cell").fillna(0)
+        matrix_txt = df_filtered.pivot(index="Country", columns="Period", values="_text").fillna(
             "No recorded conflicts"
         )
 
@@ -1206,7 +1415,7 @@ class HistWarDB:
                 x=matrix_val.columns,
                 y=matrix_val.index,
                 text=matrix_txt.values,
-                hovertemplate="<b>Country:</b> %{y}<br><b>Year:</b> %{x}<br><b>Conflict(s):</b> %{text}<extra></extra>",
+                hovertemplate="<b>Country:</b> %{y}<br><b>Period:</b> %{x}<br><b>Conflict(s):</b> %{text}<extra></extra>",
                 colorscale=[[0, "#e9ecef"], [0.5, "#ffffff"], [1, "#d9534f"]],
                 zmin=-1,
                 zmax=1,
@@ -1215,9 +1424,9 @@ class HistWarDB:
         )
         fig.update_layout(
             title=f"Global War State from Wikidata (Sovereign + Historical States) ({from_year}-{to_year})",
-            xaxis_title="Year",
+            xaxis_title="Year-Month",
             yaxis_title="Country / Historical State",
-            xaxis={'dtick': 10},
+            xaxis={'dtick': 120},
             height=700,
         )
         return fig

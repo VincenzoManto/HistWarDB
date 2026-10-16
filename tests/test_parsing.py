@@ -6,6 +6,7 @@ from histwardb.core import (
     clean_dataframe,
     impute_end_year,
     parse_bindings,
+    parse_date_parts,
     parse_entities,
     parse_year,
 )
@@ -26,11 +27,53 @@ def test_parse_year(value, expected):
     assert parse_year(value) == expected
 
 
+@pytest.mark.parametrize(
+    "value,precision,expected",
+    [
+        ("1939-09-01T00:00:00Z", 11, (1939, 9, 1)),  # day precision
+        ("1939-09-01T00:00:00Z", 10, (1939, 9, None)),  # month precision
+        ("1939-01-01T00:00:00Z", 9, (1939, None, None)),  # year precision
+        ("1939-01-01T00:00:00Z", 7, (1939, None, None)),  # century: still year-only
+        ("1939-01-01T00:00:00Z", None, (1939, 1, 1)),  # no precision info -> assume day
+        (None, 11, (None, None, None)),
+    ],
+)
+def test_parse_date_parts(value, precision, expected):
+    assert parse_date_parts(value, precision) == expected
+
+
+def test_parse_bindings_captures_month_and_day_precision():
+    binding = {
+        "countryLabel": {"value": "France"},
+        "conflictLabel": {"value": "Precise War"},
+        "startDate": {"value": "1939-09-01T00:00:00Z"},
+        "startDatePrecision": {"value": "11"},
+        "endDate": {"value": "1945-05-08T00:00:00Z"},
+        "endDatePrecision": {"value": "11"},
+    }
+    record = parse_bindings([binding], end_year=2026)[0]
+    assert (record["start_month"], record["start_day"]) == (9, 1)
+    assert (record["end_month"], record["end_day"]) == (5, 8)
+
+
+def test_parse_bindings_year_precision_leaves_month_day_none():
+    binding = {
+        "countryLabel": {"value": "Narnia"},
+        "conflictLabel": {"value": "Imprecise War"},
+        "startDate": {"value": "1950-01-01T00:00:00Z"},
+        "startDatePrecision": {"value": "9"},
+    }
+    record = parse_bindings([binding], end_year=2026)[0]
+    assert record["start_month"] is None
+    assert record["start_day"] is None
+
+
 def test_parse_bindings_fills_missing_end_date_recent(sample_bindings):
     records = parse_bindings(sample_bindings, end_year=2026)
     narnia = next(r for r in records if r["country"] == "Narnia")
     assert narnia["start_year"] == 2020
     assert narnia["end_year"] == 2026  # no end date, recent conflict -> runs to dataset end
+    assert narnia["end_month"] is None  # estimated end -> no fabricated month/day
 
 
 def test_parse_bindings_skips_entries_without_start_date():
@@ -315,6 +358,38 @@ def test_clean_dataframe_series_of_wars_policy():
     assert set(dropped["conflict_name"]) == {"War of the Third Coalition"}
     with pytest.raises(ValueError):
         clean_dataframe(df_raw, start_year=1700, end_year=2026, series_of_wars="merge")
+
+
+def test_clean_dataframe_keeps_war_month_when_not_clipped():
+    df_raw = pd.DataFrame(
+        [_record("France", "Precise War", 1939, 1945, start_month=9, start_day=1, end_month=5, end_day=8)]
+    )
+    cleaned = clean_dataframe(df_raw, start_year=1900, end_year=2026).iloc[0]
+    assert (cleaned["start_month"], cleaned["start_day"]) == (9, 1)
+    assert (cleaned["end_month"], cleaned["end_day"]) == (5, 8)
+    assert (cleaned["war_start_month"], cleaned["war_end_month"]) == (9, 5)
+
+
+def test_clean_dataframe_drops_month_when_clipped_by_country_lifespan():
+    df_raw = pd.DataFrame(
+        [
+            _record(
+                "Late Kingdom", "Long War", 1700, 1721, country_start=1707,
+                start_month=3, start_day=15, end_month=11, end_day=20,
+            )
+        ]
+    )
+    cleaned = clean_dataframe(df_raw, start_year=1600, end_year=2026).iloc[0]
+    # the clipped start comes from the country's (year-only) founding, not the war's own date
+    assert cleaned["start_year"] == 1707
+    assert pd.isna(cleaned["start_month"])
+    assert pd.isna(cleaned["start_day"])
+    # the end was not clipped, so its month/day survive
+    assert cleaned["end_year"] == 1721
+    assert cleaned["end_month"] == 11
+    assert cleaned["end_day"] == 20
+    # the conflict's own (unclipped) dates always keep their precision
+    assert cleaned["war_start_month"] == 3
 
 
 def test_clean_dataframe_keeps_same_label_entities_apart():

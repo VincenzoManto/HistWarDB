@@ -99,15 +99,21 @@ def build_sparql_query(chunk_start: int, chunk_end: int, end_year: int) -> str:
     # (a handful of items), not a path from each conflict, for the same
     # reason.
     return f"""
-    SELECT DISTINCT ?conflict ?country ?startDate ?endDate WHERE {{
+    SELECT DISTINCT ?conflict ?country ?startDate ?startDatePrecision ?endDate ?endDatePrecision WHERE {{
         hint:Query hint:optimizer "None" .
 
         ?conflictClass wdt:P279* {CONFLICT_CLASS} .
         ?conflict wdt:P31 ?conflictClass ;
                 wdt:P710 ?country ;
-                wdt:P580 ?startDate .
+                p:P580/psv:P580 ?startNode .
+        ?startNode wikibase:timeValue ?startDate ;
+                   wikibase:timePrecision ?startDatePrecision .
 
-        OPTIONAL {{ ?conflict wdt:P582 ?endDate . }}
+        OPTIONAL {{
+            ?conflict p:P582/psv:P582 ?endNode .
+            ?endNode wikibase:timeValue ?endDate ;
+                     wikibase:timePrecision ?endDatePrecision .
+        }}
 
         BIND(COALESCE(?endDate, "{end_year}-12-31T23:59:59Z"^^xsd:dateTime) as ?effEndDate)
         FILTER(?startDate < "{chunk_end}-01-01T00:00:00Z"^^xsd:dateTime && ?effEndDate >= "{chunk_start}-01-01T00:00:00Z"^^xsd:dateTime)

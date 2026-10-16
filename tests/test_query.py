@@ -85,7 +85,16 @@ def test_build_sparql_query_is_shaped_for_the_public_endpoint():
 
 def test_build_sparql_query_returns_identifiers():
     q = build_sparql_query(1900, 1925, 2026)
-    assert "SELECT DISTINCT ?conflict ?country ?startDate ?endDate" in q
+    assert "SELECT DISTINCT ?conflict ?country ?startDate ?startDatePrecision ?endDate ?endDatePrecision" in q
+
+
+def test_build_sparql_query_fetches_date_precision():
+    q = build_sparql_query(1900, 1925, 2026)
+    assert "psv:P580" in q
+    assert "psv:P582" in q
+    assert "wikibase:timePrecision" in q
+    assert "?startDatePrecision" in q
+    assert "?endDatePrecision" in q
 
 
 def test_build_sparql_query_is_valid_looking_sparql():

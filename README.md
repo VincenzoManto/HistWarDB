@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/1410596751.svg)](https://doi.org/10.5281/zenodo.23243673)
 
-**HistWarDB** is a Python toolkit that extracts, cleans and analyses war participation data from Wikidata, from 1700 to the present, for both modern sovereign states and historical states. It produces a table of who took part in which war and a Country × Year panel derived from it.
+**HistWarDB** is a Python toolkit that extracts, cleans and analyses war participation data from Wikidata, from 1700 to the present, for both modern sovereign states and historical states. It produces a table of who took part in which war and a Country × Year × Month panel derived from it, with month/day precision kept wherever Wikidata actually records it.
 
 The coding rules are written down in the [codebook](CODEBOOK.md), and agreement with Correlates of War and UCDP/PRIO is measured in the [validation report](validation/report.md). Please read both before using the data for research: coverage is bounded by Wikidata.
 
@@ -70,10 +70,10 @@ gwd = HistWarDB(start_year=1700, end_year=2026)
 # Who took part in what: one row per conflict x country, with QIDs and dates
 print(gwd.participations.head())
 
-# Country x Year panel for specific countries (exact match on name, QID or ISO code)
+# Country x Year x Month panel for specific countries (exact match on name, QID or ISO code)
 france_uk_wars = gwd(countries=["France", "United Kingdom"], view="long", only_in_war=True)
 
-# Binary matrix for a period; years outside the state's lifespan read <NA>
+# Binary matrix for a period (year or "YYYY-MM"); months outside the state's lifespan read <NA>
 binary_view = gwd(countries="German Empire", view="binary", from_date=1900, to_date=1925, only_existing=True)
 
 # Heatmap for the 15 states with most war-years
@@ -132,13 +132,15 @@ Conflicts without a recorded toll (Wikidata `P1120`) are kept. Few conflicts hav
 
 ## Supported Views (`view` parameter)
 
-* **`"long"`**: tidy DataFrame with `Country`, `Year`, `War_State`, `Active_Conflicts`, `Duration_Estimated`, `Country_QID`, `ISO3`, `State_Exists`, `War_Imputed`.
-* **`"binary"`**: countries as rows, years as columns, `1` = at war, `0` = no war recorded.
+* **`"long"`**: tidy DataFrame with `Country`, `Year`, `Month`, `War_State`, `Active_Conflicts`, `Duration_Estimated`, `Country_QID`, `ISO3`, `State_Exists`, `War_Imputed`. Month resolution only reflects real Wikidata precision -- a conflict known only to the year fills all 12 months.
+* **`"binary"`**: countries as rows, `"YYYY-MM"` periods as columns, `1` = at war, `0` = no war recorded.
 * **`"names"`**: same shape, with the names of the active conflicts.
 * **`"list"`**: alphabetical list of the conflict names under the current filters.
 * **`"countries"` / `"conflicts"`**: sorted lists of countries at war, or of conflicts, under the current filters.
 
-`War_State = 0` means "no war recorded in Wikidata", not "peace". Use `State_Exists` (or `only_existing=True`) to separate years in which the state did not exist. See the [codebook](CODEBOOK.md#72-country--year-grid-viewlong).
+`from_date`/`to_date` accept a year (`"YYYY"` or `int`) or a specific month (`"YYYY-MM"`); an omitted month defaults to the start/end of the year.
+
+`War_State = 0` means "no war recorded in Wikidata", not "peace". Use `State_Exists` (or `only_existing=True`) to separate months in which the state did not exist. See the [codebook](CODEBOOK.md#72-country--year--month-grid-viewlong).
 
 ---
 

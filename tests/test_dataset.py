@@ -6,9 +6,9 @@ from histwardb import HistWarDB
 
 def test_long_view_has_full_grid(dataset_from_bindings):
     df = dataset_from_bindings(view="long")
-    # 1900-2026 inclusive = 127 years, for each of the 3 surviving countries
+    # 1900-2026 inclusive = 127 years x 12 months, for each of the 3 surviving countries
     years = dataset_from_bindings.end_year - dataset_from_bindings.start_year + 1
-    assert len(df) == years * len(dataset_from_bindings.available_countries)
+    assert len(df) == years * 12 * len(dataset_from_bindings.available_countries)
 
 
 def test_war_state_set_for_active_years(dataset_from_bindings):
@@ -25,7 +25,7 @@ def test_german_empire_anachronism_excluded(dataset_from_bindings):
 def test_binary_view_shape(dataset_from_bindings):
     binary = dataset_from_bindings(countries=["France", "United Kingdom"], view="binary")
     assert set(binary.index) == {"France", "United Kingdom"}
-    assert binary.loc["France", 1940] == 1
+    assert binary.loc["France", "1940-06"] == 1
 
 
 def test_countries_filter_is_exact_not_substring(dataset_from_bindings):
@@ -37,7 +37,7 @@ def test_countries_filter_is_exact_not_substring(dataset_from_bindings):
 
 def test_names_view_contains_conflict_name(dataset_from_bindings):
     names = dataset_from_bindings(countries="France", from_date=1940, to_date=1940, view="names")
-    assert "Test War One" in names.loc["France", 1940]
+    assert "Test War One" in names.loc["France", "1940-06"]
 
 
 def test_list_view_returns_sorted_unique_names(dataset_from_bindings):
@@ -182,29 +182,31 @@ def test_war_never_extends_past_state_dissolution(lifespan_dataset):
 
 
 def test_state_exists_marks_years_outside_lifespan(lifespan_dataset):
-    df = lifespan_dataset(countries="Short Republic", view="long").set_index("Year")
-    assert df.loc[1919, "State_Exists"] == 0
-    assert df.loc[1920, "State_Exists"] == 1
-    assert df.loc[1950, "State_Exists"] == 1
-    assert df.loc[1951, "State_Exists"] == 0
+    df = lifespan_dataset(countries="Short Republic", view="long").set_index(["Year", "Month"])
+    assert df.loc[(1919, 1), "State_Exists"] == 0
+    assert df.loc[(1920, 1), "State_Exists"] == 1
+    assert df.loc[(1950, 12), "State_Exists"] == 1
+    assert df.loc[(1951, 1), "State_Exists"] == 0
     # unknown lifespan imposes no constraint
     assert (lifespan_dataset(countries="Russia", view="long")["State_Exists"] == 1).all()
 
 
 def test_war_imputed_flags_years_beyond_an_undated_start(lifespan_dataset):
-    df = lifespan_dataset(countries="Short Republic", view="long").set_index("Year")
-    assert df.loc[1930, "War_Imputed"] == 0  # the start year is recorded
-    assert df.loc[1931, "War_Imputed"] == 1
-    assert df.loc[1929, "War_Imputed"] == 0  # not at war at all
+    df = lifespan_dataset(countries="Short Republic", view="long").set_index(["Year", "Month"])
+    # no recorded month on this record -> the war is anchored to January of its start year
+    assert df.loc[(1930, 1), "War_Imputed"] == 0
+    assert df.loc[(1930, 6), "War_Imputed"] == 1
+    assert df.loc[(1931, 1), "War_Imputed"] == 1
+    assert df.loc[(1929, 1), "War_Imputed"] == 0  # not at war at all
     assert (lifespan_dataset(countries="Russia", view="long")["War_Imputed"] == 0).all()
 
 
 def test_duration_estimated_marks_every_year_of_an_undated_conflict(lifespan_dataset):
-    df = lifespan_dataset(countries="Short Republic", view="long").set_index("Year")
+    df = lifespan_dataset(countries="Short Republic", view="long").set_index(["Year", "Month"])
     # unlike War_Imputed, the start year is flagged too
-    assert bool(df.loc[1930, "Duration_Estimated"])
-    assert bool(df.loc[1945, "Duration_Estimated"])
-    assert not bool(df.loc[1929, "Duration_Estimated"])
+    assert bool(df.loc[(1930, 1), "Duration_Estimated"])
+    assert bool(df.loc[(1945, 6), "Duration_Estimated"])
+    assert not bool(df.loc[(1929, 1), "Duration_Estimated"])
     assert not lifespan_dataset(countries="Russia", view="long")["Duration_Estimated"].any()
 
 
@@ -215,11 +217,11 @@ def test_only_existing_drops_years_outside_lifespan(lifespan_dataset):
 
 def test_binary_view_distinguishes_peace_from_non_existence(lifespan_dataset):
     default = lifespan_dataset(view="binary")
-    assert default.loc["Short Republic", 1955] == 0
+    assert default.loc["Short Republic", "1955-01"] == 0
     existing = lifespan_dataset(view="binary", only_existing=True)
-    assert pd.isna(existing.loc["Short Republic", 1955])
-    assert existing.loc["Short Republic", 1925] == 0
-    assert existing.loc["Short Republic", 1940] == 1
+    assert pd.isna(existing.loc["Short Republic", "1955-01"])
+    assert existing.loc["Short Republic", "1925-01"] == 0
+    assert existing.loc["Short Republic", "1940-01"] == 1
 
 
 def test_countries_filter_does_not_match_substrings(lifespan_dataset):

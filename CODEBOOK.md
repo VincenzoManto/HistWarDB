@@ -202,11 +202,11 @@ subtypes), not by changing the base inclusion rule in Section 1.
 
 A conflict without a recorded `P582` has an unknown duration. HistWarDB
 never hides this. Every such participation is flagged
-`duration_estimated = True`. In the Country × Year grid, every year covered
-by such a conflict is flagged `Duration_Estimated = True`, and every year
-that is "at war" *only* because of the estimate is flagged
-`War_Imputed = 1` (the start year itself counts as observed, and a year also
-covered by a dated conflict is not imputed).
+`duration_estimated = True`. In the Country × Year × Month grid, every
+month covered by such a conflict is flagged `Duration_Estimated = True`,
+and every month that is "at war" *only* because of the estimate is flagged
+`War_Imputed = 1` (the conflict's own start month counts as observed, and a
+month also covered by a dated conflict is not imputed).
 
 How far an undated conflict is extended is set by the `missing_end`
 parameter:
@@ -230,7 +230,35 @@ item with a start date of 1827 and no end). For analysis, either filter on
 
 If both `P580` (start) and `P582` (end) are present, the end year is clamped
 to `max(end, start)` so a data-entry error producing an end date before the
-start date cannot invert the conflict's span.
+start date cannot invert the conflict's span; when the clamp fires, the end
+date's month/day are discarded along with it (Section 5.1).
+
+### 5.1 Date precision (month/day)
+
+Wikidata always serializes a date as a full `+YYYY-MM-DDTHH:MM:SSZ` value,
+even when the underlying statement only actually asserts a year or a month
+-- the unused components are silently filled with `01`. Reading the literal
+alone cannot tell which parts are real.
+
+To avoid fabricating precision Wikidata never asserted, the participation
+query fetches each date's `wikibase:timePrecision` via the statement's value
+node (`p:P580/psv:P580`, `p:P582/psv:P582`), and `parse_date_parts` uses it
+to decide what to keep:
+
+| `timePrecision` | Meaning | Kept |
+|---|---|---|
+| `11` | Day | year, month, day |
+| `10` | Month | year, month |
+| `9` or coarser | Year or less precise | year only |
+
+Every participation carries `start_month`/`start_day` and
+`end_month`/`end_day` alongside the year columns, with unknown components
+`None` rather than defaulted to `01`. The conflict's own (unclipped)
+`war_start_month`/`war_start_day`/`war_end_month`/`war_end_day` are kept
+separately: when a participation's `start_year`/`end_year` is clipped away
+from the conflict's own date by a participant or country-lifespan bound
+(Section 6), the clipped `start_month`/`end_month`/`*_day` are `None` --
+those bounds are year-only in Wikidata, so no real month survives the clip.
 
 ## 6. Post-fetch cleaning (`clean_dataframe`)
 
@@ -284,7 +312,9 @@ of a snapshot's `participations.csv`.
 | `country`, `country_qid`, `iso3` | Belligerent label, Wikidata QID, ISO 3166-1 alpha-3 code (may be missing) |
 | `conflict_name`, `conflict_qid` | Conflict label and Wikidata QID |
 | `start_year`, `end_year` | Years this country is counted as taking part (after clipping) |
+| `start_month`, `start_day`, `end_month`, `end_day` | Month/day of the clipped start and end, to the precision Wikidata actually recorded (Section 5.1); `None` when only the year is known, or when the clip came from a year-only bound |
 | `war_start_year`, `war_end_year` | The conflict's own first and last year |
+| `war_start_month`, `war_start_day`, `war_end_month`, `war_end_day` | Month/day of the conflict's own (unclipped) start/end (Section 5.1) |
 | `duration_estimated` | `True` when the conflict has no recorded end date |
 | `casualties` | Largest recorded death toll of the conflict (`P1120`); usually missing |
 | `conflict_type` | The conflict's Wikidata classes (Section 1.3) |
@@ -295,21 +325,29 @@ of a snapshot's `participations.csv`.
 | `cow_code`, `gw_code` | Correlates of War / Gleditsch–Ward codes (Section 2.3) |
 | `country_start`, `country_end` | The country's lifespan; missing when Wikidata has no date |
 
-### 7.2 Country × Year grid (`view="long"`)
+### 7.2 Country × Year × Month grid (`view="long"`)
 
-Derived deterministically from the participation table
-(`build_long_grid`): one row for every year in `[start_year, end_year]` for
-every country that appears in at least one participation.
+Derived deterministically from the participation table (`build_long_grid`):
+one row for every month of every year in `[start_year, end_year]` for every
+country that appears in at least one participation. A participation known
+to real month precision (Section 5.1) only lights up the months it actually
+covers; one known only to year precision covers all 12 months of that year,
+rather than fabricating a specific month.
 
 | Column | Meaning |
 |---|---|
 | `Country`, `Country_QID`, `ISO3`, `COW_Code`, `GW_Code` | Belligerent |
-| `Year` | Calendar year |
-| `War_State` | `1` if at least one participation covers the year, else `0` |
+| `Year`, `Month` | Calendar year and month (1-12) |
+| `War_State` | `1` if at least one participation covers the month, else `0` |
 | `Active_Conflicts` | Names of those conflicts, sorted, joined with `"; "` |
 | `Duration_Estimated` | `True` if any active conflict has no recorded end date |
 | `State_Exists` | `0` if the year is outside the country's known lifespan, else `1` |
 | `War_Imputed` | `1` if `War_State` is 1 only through a missing-end-date extension |
+
+`War_Imputed`'s "the start counts as observed" exception (Section 5) is now
+month-grained: only the conflict's own start *month* is observed, not the
+rest of its start year, so a year-precision conflict shows `War_Imputed = 1`
+for 11 of its 12 start-year months.
 
 **Reading `War_State = 0`.** A zero means "no war recorded in Wikidata for
 this country-year". Combine it with `State_Exists`:
@@ -318,8 +356,8 @@ this country-year". Combine it with `State_Exists`:
   recorded. This is the closest the data gets to "peace", and it still
   includes wars missing from Wikidata.
 - `State_Exists = 0`: the state did not exist. The cell is not an
-  observation and must be excluded from any denominator. In the 2026-10-14
-  snapshot this is 100,803 of 145,515 cells.
+  observation and must be excluded from any denominator (the cell count in
+  the 2026-10-14 snapshot's narrative predates the move to monthly cells).
 
 Pass `only_existing=True` to drop those rows; in the `binary` view they
 then read `<NA>` instead of `0`.
@@ -337,11 +375,15 @@ then read `<NA>` instead of `0`.
 | View | Derivation |
 |---|---|
 | `long` | The grid itself |
-| `binary` | Pivot of `War_State` by `Country` × `Year` |
-| `names` | Pivot of `Active_Conflicts` by `Country` × `Year` |
+| `binary` | Pivot of `War_State` by `Country` × `"YYYY-MM"` period |
+| `names` | Pivot of `Active_Conflicts` by `Country` × `"YYYY-MM"` period |
 | `list` | Deduplicated, sorted conflict names across the filtered long grid |
 | `countries` | Sorted countries with `War_State == 1` in the filtered window |
 | `conflicts` | Sorted, deduplicated conflict names among `War_State == 1` rows |
+
+`from_date`/`to_date` accept a plain year (`"YYYY"` or `int`) or a specific
+month (`"YYYY-MM"`); an omitted month defaults to January for `from_date`
+and December for `to_date`, so year-only bounds still select whole years.
 
 Query-time filters are applied to the grid before a view is rendered:
 
