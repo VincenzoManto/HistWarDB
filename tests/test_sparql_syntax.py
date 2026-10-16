@@ -21,6 +21,7 @@ WIKIDATA_PREFIXES = {
     "wdt": "http://www.wikidata.org/prop/direct/",
     "p": "http://www.wikidata.org/prop/",
     "ps": "http://www.wikidata.org/prop/statement/",
+    "psv": "http://www.wikidata.org/prop/statement/value/",
     "pq": "http://www.wikidata.org/prop/qualifier/",
     "wikibase": "http://wikiba.se/ontology#",
     "hint": "http://www.bigdata.com/queryHints#",
