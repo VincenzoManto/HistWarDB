@@ -11,5 +11,8 @@ htmlcov/
 .venv/
 venv/
 *.csv
+!data/snapshots/**/*.csv
+!src/histwardb/data/*.csv
+!validation/*.csv
 .ipynb_checkpoints/
 release.ps1

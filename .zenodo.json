@@ -1,0 +1,31 @@
+{
+  "title": "HistWarDB: A Dynamic Wikidata-Based Historical War Dataset",
+  "description": "Python toolkit and frozen, checksummed data snapshots of war participation by sovereign and historical states, 1700 to the present, derived from Wikidata. Each release archives the code together with the snapshots under data/snapshots/, so a release DOI identifies both the software and the exact data used. See CODEBOOK.md for coding rules and validation/report.md for agreement with Correlates of War and UCDP/PRIO.",
+  "upload_type": "software",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Manto, Vincenzo",
+      "orcid": "0009-0007-0065-4847"
+    },
+    {
+      "name": "Dal Cero, Riccardo",
+      "orcid": "0009-0003-1308-0230"
+    }
+  ],
+  "keywords": [
+    "wikidata",
+    "conflict-data",
+    "historical-data",
+    "political-science",
+    "war"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://www.wikidata.org/",
+      "relation": "isDerivedFrom",
+      "scheme": "url"
+    }
+  ],
+  "notes": "Data in data/snapshots/ is derived from Wikidata (CC0). Reference datasets used for validation (Correlates of War, UCDP/PRIO) are not redistributed."
+}
