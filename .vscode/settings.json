@@ -2,6 +2,7 @@
     "window.title": "c:\\Users\\vincm\\OneDrive\\Desktop\\Vincenzo\\Accademia\\HistWarDB",
     "workbench.colorCustomizations": {
         "badge.background": "#fb0",
+        "activityBarBadge.background": "#000",
         "statusBarItem.warningBackground": "#000",
         "statusBarItem.warningForeground": "#ffffff",
         "statusBarItem.warningHoverBackground": "#000",
@@ -28,6 +29,23 @@
         "tab.activeBorderTop": "#0d0d0d",
         "pickerGroup.foreground": "#0d0d0d",
         "list.activeSelectionBackground": "#0004d",
-        "panelTitle.activeBorder": "#0d0d0d"
+        "panelTitle.activeBorder": "#0d0d0d",
+        "titleBar.activeBackground": "#000",
+        "titleBar.activeForeground": "#ffffff",
+        "titleBar.inactiveBackground": "#000",
+        "titleBar.inactiveForeground": "#ffffff90",
+        "statusBarItem.remoteBackground": "#0d0d0d",
+        "statusBarItem.remoteForeground": "#ffffff",
+        "statusBar.background": "#000",
+        "statusBar.foreground": "#ffffff",
+        "statusBar.border": "#000",
+        "statusBar.debuggingBackground": "#000",
+        "statusBar.debuggingForeground": "#ffffff",
+        "statusBar.debuggingBorder": "#000",
+        "activityBar.background": "#000",
+        "activityBar.foreground": "#ffffff",
+        "activityBar.activeBorder": "#000",
+        "activityBar.inactiveForeground": "#ffffff90",
+        "activityBarBadge.foreground": "#ffffff"
     }
 }

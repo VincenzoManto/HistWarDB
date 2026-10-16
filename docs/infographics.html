@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HistWarDB — Infographics</title>
+<meta name="description" content="Six data visualizations of 300+ years of war participation data: seasonality, alliances, conflict hierarchy, survival analysis, cascading timelines and casualty scale." />
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --border: #23232f;
+    --text: #e8e8ee;
+    --muted: #9898a8;
+    --accent: #e94560;
+    --accent2: #4f9bff;
+    --ok: #2dd4bf;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", system-ui, sans-serif;
+  }
+  header.top {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(10,10,15,0.9);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  header.top a.brand {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  header.top nav a {
+    color: var(--muted);
+    text-decoration: none;
+    margin-left: 18px;
+    font-size: 14px;
+  }
+  header.top nav a:hover { color: var(--text); }
+  main { max-width: 1200px; margin: 0 auto; padding: 40px 20px 100px; }
+  .hero { text-align: center; margin-bottom: 56px; }
+  .hero h1 {
+    font-size: clamp(28px, 4vw, 44px);
+    margin: 0 0 12px;
+    letter-spacing: -0.02em;
+  }
+  .hero p { color: var(--muted); max-width: 680px; margin: 0 auto; font-size: 16px; line-height: 1.6; }
+  .stats { display: flex; gap: 28px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat .n { font-size: 26px; font-weight: 800; color: var(--accent); }
+  .stat .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  section.card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  section.card h2 { margin: 0 0 6px; font-size: 20px; }
+  section.card .sub { color: var(--muted); font-size: 14px; margin: 0 0 18px; line-height: 1.5; }
+  .plot { width: 100%; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 20px; }
+  footer a { color: var(--accent2); }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">HistWarDB</a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="https://github.com/VincenzoManto/histwardb" rel="noopener">GitHub</a>
+  </nav>
+</header>
+
+<main>
+  <div class="hero">
+    <h1>Six Ways to Look at 300 Years of War</h1>
+    <p>Built from HistWarDB's live Wikidata extraction (1700–2026): every war and civil conflict typed as a subclass of war, with its countries, dates, structure and side.</p>
+    <div class="stats">
+      <div class="stat"><div class="n" id="stat-conflicts">—</div><div class="l">Conflicts</div></div>
+      <div class="stat"><div class="n" id="stat-participations">—</div><div class="l">Participations</div></div>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Most Common Months for War Start and End</h2>
+    <p class="sub">Calendar seasonality of conflicts with real month-precision dates in Wikidata (coarser year-only dates excluded).</p>
+    <div id="chart-radial" class="plot" style="height:560px;"></div>
+  </section>
+
+  <section class="card">
+    <h2>The Domino Effect: Alliance and Rivalry Matrix</h2>
+    <p class="sub">Co-occurrence of the 15 most war-active countries across shared conflicts: positive (warm) = same side, negative (cool) = opposing sides, faint = shared a conflict with side unrecorded.</p>
+    <div id="chart-matrix" class="plot" style="height:620px;"></div>
+  </section>
+
+  <section class="card">
+    <h2>Hierarchy of Conflicts: Parent Wars and Sub-Conflicts</h2>
+    <p class="sub">Every root conflict that HistWarDB resolved into campaigns, fronts or theatres, radiating out from the center.</p>
+    <div id="chart-sunburst" class="plot" style="height:760px;"></div>
+  </section>
+
+  <section class="card">
+    <h2>Kaplan-Meier Survival Curves of Conflicts by Historical Era</h2>
+    <p class="sub">Probability that a conflict is still ongoing after N years, estimated per historical era.</p>
+    <div id="chart-survival" class="plot" style="height:560px;"></div>
+  </section>
+
+  <section class="card">
+    <h2>Cascading Timeline of Major Modern Conflicts</h2>
+    <p class="sub">1900–present, duration ≥ 2 years, ordered by start date — colored by how long each conflict lasted.</p>
+    <div id="chart-cascade" class="plot" style="height:900px;"></div>
+  </section>
+
+  <section class="card">
+    <h2>The Price of Victory: Duration vs Estimated Fatalities</h2>
+    <p class="sub">Log-log view of the conflicts with recorded casualty estimates in Wikidata — bubble size tracks fatalities.</p>
+    <div id="chart-scatter" class="plot" style="height:560px;"></div>
+  </section>
+</main>
+
+<footer>
+  Data via <a href="https://github.com/VincenzoManto/histwardb" rel="noopener">HistWarDB</a>, extracted from <a href="https://www.wikidata.org" rel="noopener">Wikidata</a>. Coverage is bounded by what Wikidata records — see the <a href="https://github.com/VincenzoManto/histwardb/blob/main/CODEBOOK.md" rel="noopener">codebook</a>.
+</footer>
+
+<script>
+const LAYOUT_BASE = {
+  paper_bgcolor: "#0a0a0f",
+  plot_bgcolor: "#0a0a0f",
+  font: { color: "#e8e8ee", family: "Inter, system-ui, sans-serif" },
+  margin: { t: 40, r: 30, b: 50, l: 60 },
+};
+const GRID = { gridcolor: "#23232f", zerolinecolor: "#23232f" };
+const CONFIG = { responsive: true, displayModeBar: false };
+
+fetch("assets/infographics_data.json")
+  .then(r => r.json())
+  .then(draw)
+  .catch(err => {
+    document.querySelectorAll(".plot").forEach(el => {
+      el.innerHTML = '<p style="color:#9898a8;padding:40px;text-align:center;">Could not load chart data.</p>';
+    });
+    console.error(err);
+  });
+
+function draw(data) {
+  document.getElementById("stat-conflicts").textContent = data.meta.n_conflicts.toLocaleString();
+  document.getElementById("stat-participations").textContent = data.meta.n_participations.toLocaleString();
+
+  drawRadial(data.radial);
+  drawMatrix(data.alliance_matrix);
+  drawSunburst(data.sunburst);
+  drawSurvival(data.survival);
+  drawCascade(data.cascade);
+  drawScatter(data.scatter);
+}
+
+function drawRadial(d) {
+  const trace1 = {
+    type: "barpolar",
+    r: d.start_counts,
+    theta: d.months,
+    name: "War Start",
+    marker: { color: "#e94560" },
+    opacity: 0.9,
+  };
+  const trace2 = {
+    type: "barpolar",
+    r: d.end_counts,
+    theta: d.months,
+    name: "War End",
+    marker: { color: "#4f9bff" },
+    opacity: 0.9,
+  };
+  const layout = Object.assign({}, LAYOUT_BASE, {
+    polar: {
+      bgcolor: "#0a0a0f",
+      radialaxis: { gridcolor: "#23232f", linecolor: "#23232f" },
+      angularaxis: { gridcolor: "#23232f", linecolor: "#23232f", direction: "clockwise" },
+    },
+    legend: { orientation: "h", y: -0.1 },
+    margin: { t: 30, r: 30, b: 30, l: 30 },
+  });
+  Plotly.newPlot("chart-radial", [trace1, trace2], layout, CONFIG);
+}
+
+function drawMatrix(d) {
+  const z = d.z.map((row, i) => row.map((v, j) => (j >= i ? null : v)));
+  const trace = {
+    type: "heatmap",
+    x: d.countries,
+    y: d.countries,
+    z: z,
+    colorscale: [
+      [0, "#4f9bff"],
+      [0.5, "#12121a"],
+      [1, "#e94560"],
+    ],
+    zmid: 0,
+    hoverongaps: false,
+    colorbar: { title: "Rivalry < 0 / Alliance > 0" },
+  };
+  const layout = Object.assign({}, LAYOUT_BASE, {
+    xaxis: Object.assign({ tickangle: -45, side: "bottom" }, GRID),
+    yaxis: Object.assign({ autorange: "reversed" }, GRID),
+    margin: { t: 20, r: 30, b: 120, l: 140 },
+  });
+  Plotly.newPlot("chart-matrix", [trace], layout, CONFIG);
+}
+
+function drawSunburst(d) {
+  const trace = {
+    type: "sunburst",
+    ids: d.ids,
+    labels: d.labels,
+    parents: d.parents,
+    values: d.values,
+    leaf: { opacity: 0.9 },
+    marker: { colorscale: "Portland", line: { color: "#0a0a0f", width: 1 } },
+  };
+  const layout = Object.assign({}, LAYOUT_BASE, { margin: { t: 10, r: 10, b: 10, l: 10 } });
+  Plotly.newPlot("chart-sunburst", [trace], layout, CONFIG);
+}
+
+function drawSurvival(d) {
+  const palette = ["#2dd4bf", "#eab308", "#8b8bf0", "#e94560"];
+  const traces = Object.keys(d).map((era, i) => ({
+    type: "scatter",
+    mode: "lines",
+    line: { shape: "hv", color: palette[i % palette.length], width: 2 },
+    x: d[era].x,
+    y: d[era].y,
+    name: `${era} (n=${d[era].n})`,
+  }));
+  const layout = Object.assign({}, LAYOUT_BASE, {
+    xaxis: Object.assign({ title: "Conflict Duration (Years)" }, GRID),
+    yaxis: Object.assign({ title: "Probability of Conflict Continuing", range: [0, 1.02] }, GRID),
+    legend: { orientation: "h", y: -0.2 },
+  });
+  Plotly.newPlot("chart-survival", traces, layout, CONFIG);
+}
+
+function drawCascade(d) {
+  const x0 = d.start, x1 = d.end, y = d.names;
+  const trace = {
+    type: "bar",
+    orientation: "h",
+    base: x0,
+    x: x1.map((e, i) => e - x0[i] + 1),
+    y: y,
+    marker: {
+      color: d.duration,
+      colorscale: "Plasma",
+      colorbar: { title: "Duration (yrs)" },
+    },
+    hovertext: y.map((n, i) => `${n}: ${x0[i]}–${x1[i]} (${d.duration[i]}y)`),
+    hoverinfo: "text",
+  };
+  const layout = Object.assign({}, LAYOUT_BASE, {
+    xaxis: Object.assign({ title: "Year" }, GRID),
+    yaxis: Object.assign({ autorange: "reversed", automargin: true, tickfont: { size: 9 } }, GRID),
+    margin: { t: 20, r: 30, b: 50, l: 220 },
+    bargap: 0.3,
+  });
+  Plotly.newPlot("chart-cascade", [trace], layout, CONFIG);
+}
+
+function drawScatter(d) {
+  const sizeRef = 2.0 * Math.max(...d.casualties) / (60 ** 2);
+  const trace = {
+    type: "scatter",
+    mode: "markers",
+    x: d.duration,
+    y: d.casualties,
+    text: d.names,
+    marker: {
+      size: d.casualties,
+      sizemode: "area",
+      sizeref: sizeRef,
+      sizemin: 4,
+      color: d.duration,
+      colorscale: "Plasma",
+      colorbar: { title: "Duration (yrs)" },
+      line: { color: "#0a0a0f", width: 1 },
+    },
+    hovertemplate: "%{text}<br>Duration: %{x}y<br>Fatalities: %{y:,.0f}<extra></extra>",
+  };
+  const layout = Object.assign({}, LAYOUT_BASE, {
+    xaxis: Object.assign({ title: "Duration (Years, log)", type: "log" }, GRID),
+    yaxis: Object.assign({ title: "Estimated Fatalities (log)", type: "log" }, GRID),
+  });
+  Plotly.newPlot("chart-scatter", [trace], layout, CONFIG);
+}
+</script>
+</body>
+</html>
