@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Three Centuries of War</title>
+<meta name="description" content="Every war recorded in Wikidata since 1700, drawn seven ways: a spiral of conflicts, a barcode of nations, rivers of war, world-war constellations, alliances, wars within wars and the war clock." />
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  /* Layout: full-bleed dark chapters, each an eyebrow + condensed headline + one finding + one large drawing. */
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --line: #23232f;
+    --text: #e8e8ee;
+    --muted: #9898a8;
+    --faint: #5c5c6e;
+    --red: #e94560;
+    --blue: #3d86ea;
+    --amber: #c07d10;
+    --teal: #1aa898;
+    --violet: #9474ec;
+    --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+    --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); }
+  a { color: var(--blue); }
+  header.top {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding-block: 12px;
+    padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px));
+    background: rgba(10, 10, 15, 0.86); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+  }
+  header.top a.brand { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -0.01em; }
+  header.top nav { display: flex; gap: 18px; flex-wrap: wrap; }
+  header.top nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+  header.top nav a:hover, header.top nav a:focus-visible { color: var(--text); }
+  .wrap {
+    max-width: 1240px; margin: 0 auto;
+    padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px));
+  }
+  .chapter { padding-block: 72px 24px; border-top: 1px solid var(--line); }
+  .chapter:first-of-type { border-top: 0; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--red); margin: 0 0 10px; }
+  h1, h2 { font-family: var(--display); font-weight: 800; letter-spacing: 0.01em; text-transform: uppercase; margin: 0; line-height: 0.95; text-wrap: balance; }
+  h1 { font-size: clamp(54px, 9vw, 128px); }
+  h2 { font-size: clamp(36px, 5.2vw, 72px); }
+  .finding { font-size: clamp(17px, 1.6vw, 21px); line-height: 1.5; color: var(--muted); max-width: 62ch; margin: 18px 0 0; }
+  .finding b { color: var(--text); font-weight: 600; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .hero { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 24px; align-items: center; padding-block: 56px 24px; }
+  .hero h1 { line-height: 0.9; }
+  .hero-text { display: grid; gap: 22px; min-width: 0; }
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; }
+  .stat .n { font-family: var(--display); font-weight: 800; font-size: clamp(34px, 4vw, 52px); line-height: 1; }
+  .stat .l { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); margin-top: 18px; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; box-shadow: 0 0 10px currentColor; }
+  .stage { position: relative; margin-top: 28px; min-width: 0; }
+  .stage canvas, .stage svg { display: block; max-width: 100%; }
+  .spiral-stage { margin-top: 0; width: 100%; max-width: 900px; justify-self: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 14px; cursor: pointer;
+  }
+  .btn[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btn:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  .tip {
+    position: absolute; z-index: 10; pointer-events: none; max-width: 300px;
+    background: rgba(18, 18, 26, 0.96); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; line-height: 1.45; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  }
+  .tip .t { font-weight: 600; margin-bottom: 4px; }
+  .tip .m { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .twin { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: 24px; margin-top: 28px; }
+  .twin figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; position: relative; min-width: 0; }
+  .twin figcaption { font-family: var(--display); font-weight: 600; font-size: 28px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .twin figcaption span { display: block; font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: 0; margin-top: 4px; font-weight: 400; }
+  .axis text, .label { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .axis line, .axis path { stroke: var(--line); }
+  .label-strong { fill: var(--text); font-family: var(--body); font-size: 12px; }
+  footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.6; padding-block: 28px 48px; }
+  .note { color: var(--faint); font-size: 13px; margin-top: 14px; max-width: 75ch; line-height: 1.5; }
+  @media (max-width: 820px) {
+    .hero { grid-template-columns: minmax(0, 1fr); }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .chapter h2 { transition: letter-spacing 0.6s ease; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">HistWarDB</a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="infographics.html">Infographics</a>
+    <a href="https://github.com/VincenzoManto/histwardb" rel="noopener">GitHub</a>
+  </nav>
+</header>
+
+<main>
+  <section class="wrap hero" id="spiral">
+    <div class="hero-text">
+      <p class="eyebrow"><span class="num" id="hero-range">—</span> · every conflict, one spiral</p>
+      <h1>Three centuries of war</h1>
+      <p class="finding">Start at the centre in <b id="hero-start">1700</b> and read clockwise: one full turn is 25 years, and the years in the margin mark where each turn begins; the small grey numbers on the rim count years into a turn. Every arc is one conflict, drawn from its first year to its last and thicker when more states took part. The brightest knots are the years when <b id="hero-peak">—</b> conflicts burned at once.</p>
+      <div class="stats">
+        <div class="stat"><div class="n num" id="s-conflicts">—</div><div class="l">conflicts</div></div>
+        <div class="stat"><div class="n num" id="s-states">—</div><div class="l">states and empires</div></div>
+        <div class="stat"><div class="n num" id="s-parts">—</div><div class="l">participations</div></div>
+        <div class="stat"><div class="n num" id="s-years">—</div><div class="l">state-years at war</div></div>
+      </div>
+      <div class="legend" id="type-legend"></div>
+      <div class="controls"><button class="btn" type="button" id="spiral-play">Replay 1700 → today</button></div>
+    </div>
+    <div class="stage spiral-stage" id="spiral-stage"><canvas id="spiral-canvas" aria-label="Spiral timeline of every conflict since 1700"></canvas></div>
+  </section>
+
+  <section class="chapter" id="decades">
+    <div class="wrap">
+      <p class="eyebrow">Conflicts begun, decade by decade</p>
+      <h2>The ring of decades</h2>
+      <p class="finding">Each spoke is a decade, its length the number of conflicts that began in it, split by kind. The busiest was the <b id="dc-peak">—</b>.</p>
+      <div class="stage" id="decades-stage"></div>
+    </div>
+  </section>
+
+  <section class="chapter" id="powers">
+    <div class="wrap">
+      <p class="eyebrow">Russia · China · Europe</p>
+      <h2>Three powers, three centuries</h2>
+      <p class="finding">For each decade, the bar is the share of years its states spent at war: Russia's successive states (Tsardom to Federation), China's (Qing to People's Republic), and all European states together. Lines on top count the conflicts they entered. Russia's states were at war in <b id="pw-russia">—</b> of all years since 1700, China's in <b id="pw-china">—</b>; Europe's share fell from <b id="pw-eu-early">—</b> in the 1700s to <b id="pw-eu-late">—</b> after 1945.</p>
+      <div class="legend" id="powers-legend"></div>
+      <div class="stage" id="powers-stage"></div>
+      <p class="note">Wikidata records who took part in a war, not who started it, so this cannot separate wars of expansion from wars of defence. A state's lineage is its Correlates of War code in the HistWarDB crosswalk; "Europe" is COW codes 200–395 without Russia. Very long items (the Sino-Japanese Wars of 1894–1945, the Kashmir conflict) inflate the share for the states in them.</p>
+    </div>
+  </section>
+
+  <section class="chapter" id="barcode">
+    <div class="wrap">
+      <p class="eyebrow">Every state, every year</p>
+      <h2>The barcode of nations</h2>
+      <p class="finding">One thin row for each of the <b id="bc-n">—</b> states and empires in the data, one column per year. Bright marks are years at war, brighter when several wars overlapped; the faint line is the state's lifespan. <b id="bc-top">—</b> spent the most years at war.</p>
+      <div class="controls" role="group" aria-label="Order rows by">
+        <button class="btn" type="button" data-sort="first" aria-pressed="true">By first war</button>
+        <button class="btn" type="button" data-sort="years" aria-pressed="false">By years at war</button>
+      </div>
+      <div class="stage" id="barcode-stage"><canvas id="barcode-canvas" aria-label="Rows of states by year, bright where at war"></canvas></div>
+    </div>
+  </section>
+
+  <section class="chapter" id="peace">
+    <div class="wrap">
+      <p class="eyebrow">The longest stretches without war</p>
+      <h2>The long peace</h2>
+      <p class="finding">After its first recorded war, each state's longest run of years with no war at all, for the twenty longest. <b id="pc-top">—</b>. Bars that reach the right edge are still unbroken.</p>
+      <div class="stage" id="peace-stage"></div>
+    </div>
+  </section>
+
+  <section class="chapter" id="durations">
+    <div class="wrap">
+      <p class="eyebrow">From first shot to last</p>
+      <h2>How long wars last</h2>
+      <p class="finding">Every conflict as a dot on a logarithmic scale of its length, sized by the states that fought it. Half of all wars are over within <b id="du-median">—</b>; the longest, <b id="du-longest">—</b>, ran for <b id="du-longest-n">—</b> years.</p>
+      <div class="legend" id="durations-legend"></div>
+      <div class="stage" id="durations-stage"></div>
+      <p class="note">"Series of wars" items are left out. Conflicts with no recorded end date are drawn hollow; their length is an estimate.</p>
+    </div>
+  </section>
+
+  <section class="chapter" id="rivers">
+    <div class="wrap">
+      <p class="eyebrow">Who was fighting, by kind of war</p>
+      <h2>Rivers of war</h2>
+      <p class="finding">The width of the river is the number of state participations in each year, split by the kind of conflict. It swells to <b id="rv-peak">—</b> in <b id="rv-year">—</b>.</p>
+      <div class="stage" id="rivers-stage"></div>
+      <p class="note">Before 1800 much of the flow is "series of wars" items, which Wikidata types as wars but which group several separate wars.</p>
+    </div>
+  </section>
+
+  <section class="chapter" id="constellations">
+    <div class="wrap">
+      <p class="eyebrow">1914–1918 · 1939–1945</p>
+      <h2>Two world wars, two constellations</h2>
+      <p class="finding">Each star is a state, each thread a pair of states on opposite coalitions. The Second World War pulls in <b id="ww-ratio">—</b> as many opposing pairs as the First.</p>
+      <div class="twin" id="twin"></div>
+    </div>
+  </section>
+
+  <section class="chapter" id="alliances">
+    <div class="wrap">
+      <p class="eyebrow">The most war-active states</p>
+      <h2>Bound by war</h2>
+      <p class="finding">Ribbons join the <b id="ch-n">—</b> states with the most years at war, as thick as the number of conflicts they took part in together, as allies or enemies. The strongest bond is <b id="ch-top">—</b>.</p>
+      <div class="stage" id="chord-stage"></div>
+    </div>
+  </section>
+
+  <section class="chapter" id="nested">
+    <div class="wrap">
+      <p class="eyebrow">Fronts, campaigns and theatres</p>
+      <h2>Wars within wars</h2>
+      <p class="finding">Every large circle is a war that Wikidata breaks into parts; the circles inside are its fronts and campaigns, sized by the number of states fighting in them. <b id="ns-top">—</b> holds the most.</p>
+      <div class="stage" id="pack-stage"></div>
+    </div>
+  </section>
+
+  <section class="chapter" id="clock" hidden>
+    <div class="wrap">
+      <p class="eyebrow">Month of the year</p>
+      <h2>The war clock</h2>
+      <p class="finding">Red bars count wars that started in each month, blue bars wars that ended, for conflicts whose dates Wikidata records to the month. <b id="ck-top">—</b> is the most common month to go to war.</p>
+      <div class="stage" id="clock-stage"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  Data: <span id="ft-snap">—</span>, built with <a href="https://github.com/VincenzoManto/histwardb" rel="noopener">HistWarDB</a> from <a href="https://www.wikidata.org" rel="noopener">Wikidata</a> by <code>scripts/build_three_centuries.py</code>. Wikidata records major European wars far better than colonial and pre-1800 wars, and end dates are estimated for some conflicts; see the <a href="https://github.com/VincenzoManto/histwardb/blob/main/CODEBOOK.md" rel="noopener">codebook</a> and the <a href="https://github.com/VincenzoManto/histwardb/blob/main/validation/report.md" rel="noopener">validation report</a>.
+</footer>
+
+<script>
+(() => {
+  const COLORS = ["#e94560", "#3d86ea", "#c07d10", "#1aa898", "#9474ec"];
+  const fmt = d3.format(",");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  fetch("assets/three_centuries.json")
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((data) => {
+      header(data);
+      const draws = [() => spiral(data), () => decades(data), () => powers(data), () => barcode(data), () => peace(data),
+        () => durations(data), () => rivers(data), () => constellations(data), () => chord(data), () => pack(data), () => clock(data)];
+      for (const d of draws) d();
+      let w = window.innerWidth;
+      window.addEventListener("resize", debounce(() => { if (window.innerWidth !== w) { w = window.innerWidth; draws.forEach((d) => d()); } }, 200));
+    })
+    .catch((err) => {
+      for (const id of ["spiral-stage", "decades-stage", "powers-stage", "barcode-stage", "peace-stage", "durations-stage", "rivers-stage", "twin", "chord-stage", "pack-stage"]) {
+        const el = document.getElementById(id);
+        el.textContent = "Could not load the chart data.";
+        el.style.color = "var(--muted)";
+      }
+      console.error(err);
+    });
+
+  function debounce(fn, ms) { let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; }
+  const $ = (id) => document.getElementById(id);
+
+  function tooltip(stage) {
+    let t = stage.querySelector(":scope > .tip");
+    if (!t) { t = document.createElement("div"); t.className = "tip"; t.hidden = true; stage.append(t); }
+    return {
+      show(event, title, lines) {
+        t.replaceChildren(Object.assign(document.createElement("div"), { className: "t", textContent: title }),
+          ...lines.map((l) => Object.assign(document.createElement("div"), { className: "m", textContent: l })));
+        t.hidden = false;
+        const r = stage.getBoundingClientRect();
+        let x = event.clientX - r.left + 16, y = event.clientY - r.top + 16;
+        if (x + t.offsetWidth > r.width) x = event.clientX - r.left - t.offsetWidth - 16;
+        if (y + t.offsetHeight > r.height) y = event.clientY - r.top - t.offsetHeight - 16;
+        t.style.left = Math.max(0, x) + "px";
+        t.style.top = Math.max(0, y) + "px";
+      },
+      hide() { t.hidden = true; },
+    };
+  }
+
+  function canvasFor(canvas, w, h) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+  }
+
+  function header(data) {
+    const m = data.meta;
+    $("hero-range").textContent = `${m.start_year}–${m.end_year}`;
+    $("s-conflicts").textContent = fmt(m.n_conflicts);
+    $("s-states").textContent = fmt(m.n_states);
+    $("s-parts").textContent = fmt(m.n_participations);
+    $("s-years").textContent = fmt(m.state_years_at_war);
+    $("ft-snap").textContent = `Wikidata as of ${m.retrieved_at ? m.retrieved_at.slice(0, 10) : "the snapshot date"}`;
+    const legend = $("type-legend");
+    legend.replaceChildren(...m.groups.map((g, i) => {
+      const s = document.createElement("span");
+      const sw = document.createElement("i");
+      sw.style.background = COLORS[i];
+      sw.style.color = COLORS[i];
+      s.append(sw, document.createTextNode(g));
+      return s;
+    }));
+  }
+
+  /* 1. Spiral ------------------------------------------------------------ */
+  let spiralAnim = null;
+  function spiral(data) {
+    const stage = $("spiral-stage"), canvas = $("spiral-canvas"), tip = tooltip(stage);
+    const W = Math.max(300, Math.min(stage.clientWidth, 900));
+    const small = W < 560;
+    const col = small ? 0 : 92; // column outside the circle for the turn years
+    const size = W - col;
+    const ctx = canvasFor(canvas, W, size);
+    const { start_year: y0, end_year: y1 } = data.meta;
+    const PERIOD = 25, cx = col + size / 2, cy = size / 2;
+    const ring = small ? 0 : size * 0.12; // room outside the spiral for landmark callouts
+    const r0 = size * 0.05, rMax = size / 2 - 18 - ring;
+    $("hero-start").textContent = y0;
+    const k = (rMax - r0) / (y1 + 1 - y0);
+    const spacing = k * PERIOD;
+    const at = (year, off) => {
+      const a = (2 * Math.PI * (year - y0)) / PERIOD - Math.PI / 2;
+      const r = r0 + k * (year - y0) + off;
+      return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    };
+
+    // Lanes keep overlapping conflicts apart across the gap between turns.
+    // Arcs are clipped to the spiral's years; "series of wars" go underneath, thin and dim.
+    const items = data.conflicts.map((c) => ({ ...c, cs: Math.max(c.s, y0), ce: Math.min(c.e, y1) }))
+      .filter((c) => c.ce >= c.cs)
+      .sort((a, b) => (a.g === 4 ? -1 : 0) - (b.g === 4 ? -1 : 0) || a.cs - b.cs || b.k - a.k);
+    const laneEnd = [];
+    const LANES = 9;
+    for (const c of items) {
+      let lane = laneEnd.findIndex((e) => e < c.cs);
+      if (lane < 0) { lane = laneEnd.length; laneEnd.push(c.ce); } else laneEnd[lane] = c.ce;
+      c.off = ((lane % LANES) / (LANES - 1) - 0.5) * spacing * 0.78;
+      c.width = c.g === 4 ? 0.8 : Math.min(3.2, 0.7 + Math.sqrt(c.k) * 0.4);
+      c.alpha = c.g === 4 ? 0.22 : c.x ? 0.4 : 0.85;
+    }
+    const peak = d3.max(d3.range(y0, y1 + 1), (y) => items.filter((c) => c.s <= y && c.e >= y && c.g !== 4).length);
+    $("hero-peak").textContent = fmt(peak);
+
+    const points = [];
+    const LANDMARKS = ["Seven Years' War", "War of the Third Coalition", "Crimean War", "American Civil War", "World War I", "World War II", "Korean War", "Vietnam War", "Iran–Iraq War"];
+    function drawGuide() {
+      ctx.clearRect(0, 0, W, size);
+      ctx.save();
+      // A faint ember behind the spiral.
+      const glow = ctx.createRadialGradient(cx, cy, r0, cx, cy, rMax + ring * 0.6);
+      glow.addColorStop(0, "rgba(233,69,96,0.16)");
+      glow.addColorStop(0.7, "rgba(233,69,96,0.04)");
+      glow.addColorStop(1, "rgba(233,69,96,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, W, size);
+      // The spiral itself, with a tick every 5 years.
+      ctx.strokeStyle = "#2e2e3c";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = y0; y <= y1 + 1; y += 0.25) { const [x, yy] = at(y, 0); y === y0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy); }
+      ctx.stroke();
+      ctx.strokeStyle = "#3a3a4c";
+      ctx.beginPath();
+      for (let y = y0; y <= y1; y += 5) {
+        const [ax, ay] = at(y, -spacing * 0.42), [bx, by] = at(y, spacing * 0.42);
+        if (y % PERIOD) { ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    function pill(text, x, y, strong) {
+      ctx.save();
+      ctx.font = `${strong ? 700 : 500} ${Math.max(10, size * (strong ? 0.017 : 0.014))}px "JetBrains Mono", monospace`;
+      const w = ctx.measureText(text).width + 10, h = Math.max(14, size * 0.024);
+      ctx.fillStyle = strong ? "#0a0a0f" : "rgba(10,10,15,0.85)";
+      ctx.strokeStyle = strong ? "#5c5c6e" : "transparent";
+      ctx.beginPath();
+      ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2);
+      ctx.fill();
+      if (strong) ctx.stroke();
+      ctx.fillStyle = strong ? "#e8e8ee" : "#9898a8";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x, y);
+      ctx.restore();
+    }
+    function drawLabels(upTo) {
+      // A year at the top of every turn, a fainter one halfway round.
+      const turns = d3.range(y0, Math.min(y1, upTo) + 1e-9, PERIOD);
+      if (small) { for (const y of turns) { const [x, yy] = at(y, 0); pill(String(y), x, yy, true); } return; }
+      ctx.save();
+      // Each turn's year lives in the column outside the circle, tied to the spiral by a leader.
+      ctx.font = `700 ${Math.max(11, size * 0.017)}px "JetBrains Mono", monospace`;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      for (const y of turns) {
+        const [x, yy] = at(y, 0);
+        ctx.strokeStyle = "rgba(232,232,238,0.28)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(col - 12, yy); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#e8e8ee";
+        ctx.beginPath(); ctx.arc(x, yy, 2.4, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillText(String(y), col - 16, yy);
+      }
+      // On the rim, how many years into the turn each angle is.
+      ctx.font = `${Math.max(10, size * 0.012)}px "JetBrains Mono", monospace`;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#6e6e80";
+      ctx.strokeStyle = "#3a3a4c";
+      for (let k = 0; k < PERIOD; k += 1) {
+        const a = (2 * Math.PI * k) / PERIOD - Math.PI / 2;
+        const ra = rMax + 4, rb = rMax + (k % 5 ? 8 : 13);
+        ctx.beginPath(); ctx.moveTo(cx + ra * Math.cos(a), cy + ra * Math.sin(a)); ctx.lineTo(cx + rb * Math.cos(a), cy + rb * Math.sin(a)); ctx.stroke();
+        if (k && k % 5 === 0) ctx.fillText(`+${k}`, cx + (rMax + 24) * Math.cos(a), cy + (rMax + 24) * Math.sin(a));
+      }
+      ctx.restore();
+      // Landmark wars: a dot on the arc, a label out on the ring.
+      ctx.save();
+      ctx.font = `500 ${Math.max(11, size * 0.0155)}px "Inter", sans-serif`;
+      ctx.textBaseline = "middle";
+      const marks = LANDMARKS.map((n) => items.find((c) => c.n === n)).filter((c) => c && c.cs <= upTo)
+        .map((c) => {
+          const mid = Math.min(upTo, (c.cs + c.ce + 1) / 2);
+          const a = (2 * Math.PI * (mid - y0)) / PERIOD - Math.PI / 2;
+          return { c, mid, a: ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) };
+        }).sort((p, q) => p.a - q.a);
+      // Push labels apart around the ring.
+      const minGap = 0.19;
+      for (let pass = 0; pass < 6; pass += 1) {
+        for (let i = 1; i < marks.length; i += 1) if (marks[i].a - marks[i - 1].a < minGap) marks[i].a = marks[i - 1].a + minGap;
+      }
+      const rl = rMax + ring * 0.62;
+      for (const m of marks) {
+        const [px, py] = at(m.mid, m.c.off);
+        const lx = cx + rl * Math.cos(m.a), ly = cy + rl * Math.sin(m.a);
+        ctx.strokeStyle = "rgba(232,232,238,0.45)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(lx, ly); ctx.stroke();
+        ctx.fillStyle = COLORS[m.c.g];
+        ctx.beginPath(); ctx.arc(px, py, 3.2, 0, 2 * Math.PI); ctx.fill();
+        ctx.strokeStyle = "#0a0a0f"; ctx.lineWidth = 1.2; ctx.stroke();
+        const right = Math.cos(m.a) >= 0;
+        ctx.textAlign = right ? "left" : "right";
+        const tx = lx + (right ? 6 : -6);
+        ctx.fillStyle = "#e8e8ee";
+        ctx.fillText(m.c.n, tx, ly - 7);
+        ctx.fillStyle = "#9898a8";
+        ctx.font = `${Math.max(10, size * 0.013)}px "JetBrains Mono", monospace`;
+        ctx.fillText(`${m.c.s}–${m.c.e}`, tx, ly + 8);
+        ctx.font = `500 ${Math.max(11, size * 0.0155)}px "Inter", sans-serif`;
+      }
+      ctx.restore();
+    }
+    function drawConflict(c, upTo) {
+      const end = Math.min(c.ce + 1, upTo);
+      if (end <= c.cs) return;
+      ctx.strokeStyle = COLORS[c.g];
+      ctx.lineWidth = c.width;
+      ctx.globalAlpha = c.alpha;
+      ctx.beginPath();
+      const step = Math.max(0.05, (end - c.cs) / 240);
+      for (let y = c.cs; y <= end + 1e-9; y += step) { const [x, yy] = at(y, c.off); y === c.cs ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy); }
+      ctx.stroke();
+    }
+    function drawAll(upTo) {
+      drawGuide();
+      ctx.save();
+      ctx.lineCap = "round";
+      // One soft pass for glow, then the crisp arcs on top.
+      ctx.filter = `blur(${size > 500 ? 5 : 3}px)`;
+      for (const c of items) if (c.g !== 4) { ctx.globalAlpha = 0.25; drawConflictGlow(c, upTo); }
+      ctx.filter = "none";
+      for (const c of items) drawConflict(c, upTo);
+      ctx.restore();
+      drawLabels(upTo);
+    }
+    function drawConflictGlow(c, upTo) {
+      const end = Math.min(c.ce + 1, upTo);
+      if (end <= c.cs) return;
+      ctx.strokeStyle = COLORS[c.g];
+      ctx.lineWidth = c.width * 2.5;
+      ctx.beginPath();
+      const step = Math.max(0.1, (end - c.cs) / 120);
+      for (let y = c.cs; y <= end + 1e-9; y += step) { const [x, yy] = at(y, c.off); y === c.cs ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy); }
+      ctx.stroke();
+    }
+    drawAll(y1 + 1);
+
+    for (const c of items) {
+      for (let y = c.cs; y <= c.ce + 1; y += 0.5) points.push([...at(y, c.off), c]);
+    }
+    const delaunay = d3.Delaunay.from(points, (p) => p[0], (p) => p[1]);
+    canvas.onpointermove = (event) => {
+      const r = canvas.getBoundingClientRect();
+      const px = event.clientX - r.left, py = event.clientY - r.top;
+      const i = delaunay.find(px, py);
+      const p = points[i];
+      if (!p || Math.hypot(p[0] - px, p[1] - py) > 14) return tip.hide();
+      const c = p[2];
+      tip.show(event, c.n, [`${c.s}–${c.e}${c.x ? " (end estimated)" : ""}`, data.meta.groups[c.g], `${fmt(c.k)} state${c.k === 1 ? "" : "s"}`]);
+    };
+    canvas.onpointerleave = () => tip.hide();
+
+    const play = $("spiral-play");
+    play.onclick = () => {
+      if (spiralAnim) cancelAnimationFrame(spiralAnim);
+      if (reduced) return drawAll(y1 + 1);
+      const t0 = performance.now(), dur = 6000;
+      const frame = (now) => {
+        const t = Math.min(1, (now - t0) / dur);
+        drawAll(y0 + (y1 + 1 - y0) * d3.easeCubicInOut(t));
+        spiralAnim = t < 1 ? requestAnimationFrame(frame) : null;
+      };
+      spiralAnim = requestAnimationFrame(frame);
+    };
+    if (!spiralPlayed && !reduced) { spiralPlayed = true; play.click(); }
+  }
+  let spiralPlayed = false;
+
+  /* 1b. Ring of decades --------------------------------------------------- */
+  function decades(data) {
+    const stage = $("decades-stage"), tip = tooltip(stage);
+    const groups = data.meta.groups, { start_year: y0, end_year: y1 } = data.meta;
+    const first = Math.floor(y0 / 10) * 10;
+    const rows = d3.range(first, y1 + 1, 10).map((d) => ({ d, counts: groups.map(() => 0) }));
+    for (const c of data.conflicts) { const i = Math.floor((c.s - first) / 10); if (i >= 0 && i < rows.length) rows[i].counts[c.g] += 1; }
+    for (const r of rows) r.total = d3.sum(r.counts);
+    const peak = rows.reduce((a, b) => (b.total > a.total ? b : a));
+    $("dc-peak").textContent = `${peak.d}s, with ${fmt(peak.total)} conflicts begun`;
+    const w = Math.min(stage.clientWidth, 760), h = w, inner = w * 0.16, outer = w / 2 - 54;
+    stage.replaceChildren();
+    const svg = d3.select(stage).append("svg").attr("viewBox", `${-w / 2} ${-h / 2} ${w} ${h}`).attr("width", "100%").style("max-width", `${w}px`).style("margin", "0 auto");
+    const angle = d3.scaleBand(rows.map((r) => r.d), [0, 2 * Math.PI]).padding(0.12);
+    const r = d3.scaleRadial([0, d3.max(rows, (q) => q.total)], [inner, outer]);
+    for (const t of r.ticks(4).filter((t) => t > 0)) {
+      svg.append("circle").attr("r", r(t)).attr("fill", "none").attr("stroke", "#23232f");
+      svg.append("text").attr("class", "label").attr("x", 4).attr("y", -r(t) - 3).text(fmt(t));
+    }
+    for (const row of rows) {
+      let base = 0;
+      row.counts.forEach((n, g) => {
+        if (!n) return;
+        const a0 = angle(row.d), a1 = a0 + angle.bandwidth();
+        svg.append("path").attr("d", d3.arc()({ innerRadius: r(base), outerRadius: r(base + n), startAngle: a0, endAngle: a1, padRadius: inner }))
+          .attr("fill", COLORS[g]).attr("fill-opacity", row === peak ? 1 : 0.85).attr("stroke", "#0a0a0f").attr("stroke-width", 0.6)
+          .on("pointermove", (event) => tip.show(event, `${row.d}s · ${fmt(row.total)} conflicts begun`, groups.map((gg, i) => row.counts[i] ? `${gg}: ${fmt(row.counts[i])}` : null).filter(Boolean)))
+          .on("pointerleave", () => tip.hide());
+        base += n;
+      });
+      if (row.d % 50 === 0) {
+        const a = angle(row.d) + angle.bandwidth() / 2;
+        const rr = outer + 18;
+        svg.append("text").attr("class", "label-strong").attr("x", rr * Math.sin(a)).attr("y", -rr * Math.cos(a)).attr("text-anchor", "middle").attr("dy", "0.35em").text(row.d);
+      }
+    }
+    svg.append("text").attr("class", "label-strong").attr("text-anchor", "middle").attr("dy", "-0.2em").style("font-size", "13px").text(`${peak.d}s`);
+    svg.append("text").attr("class", "label").attr("text-anchor", "middle").attr("dy", "1.1em").text(`${fmt(peak.total)} begun`);
+  }
+
+  /* 1c. Three powers ------------------------------------------------------ */
+  function powers(data) {
+    const stage = $("powers-stage"), tip = tooltip(stage);
+    const groups = data.meta.groups;
+    const P = data.powers, names = Object.keys(P);
+    const tone = { Russia: "#e94560", China: "#c07d10", Europe: "#3d86ea" };
+    const share = (rows, a, b) => { const e = d3.sum(rows, (r) => (r[0] >= a && r[0] < b ? r[1] : 0)); return e ? d3.sum(rows, (r) => (r[0] >= a && r[0] < b ? r[2] : 0)) / e : 0; };
+    const pct = d3.format(".0%");
+    $("pw-russia").textContent = pct(share(P.Russia.decades, 1700, 2100));
+    $("pw-china").textContent = pct(share(P.China.decades, 1700, 2100));
+    $("pw-eu-early").textContent = pct(share(P.Europe.decades, 1700, 1800));
+    $("pw-eu-late").textContent = pct(share(P.Europe.decades, 1950, 2100));
+    const legend = $("powers-legend");
+    legend.replaceChildren(...names.map((n) => { const s = document.createElement("span"); const i = document.createElement("i"); i.style.background = i.style.color = tone[n]; s.append(i, document.createTextNode(`${n}: share of years at war`)); return s; }),
+      (() => { const s = document.createElement("span"); const i = document.createElement("i"); i.style.background = "#e8e8ee"; i.style.color = "transparent"; i.style.height = "2px"; s.append(i, document.createTextNode("conflicts entered in the decade (wars between states, colonial and independence wars; civil wars dotted)")); return s; })());
+    const w = stage.clientWidth, rowH = w < 600 ? 150 : 190, gap = 28, left = 44, right = 46, h = names.length * (rowH + gap);
+    stage.replaceChildren();
+    const svg = d3.select(stage).append("svg").attr("viewBox", `0 0 ${w} ${h}`).attr("width", "100%");
+    const x = d3.scaleBand(P[names[0]].decades.map((r) => r[0]), [left, w - right]).padding(0.18);
+    const maxBegun = d3.max(names, (n) => d3.max(P[n].decades, (r) => d3.sum(r.slice(3))));
+    names.forEach((n, i) => {
+      const top = i * (rowH + gap), rows = P[n].decades.filter((r) => r[1] > 0);
+      const g = svg.append("g").attr("transform", `translate(0,${top})`);
+      const y = d3.scaleLinear([0, 1], [rowH, 18]);
+      const y2 = d3.scaleLinear([0, maxBegun], [rowH, 18]);
+      g.append("text").attr("x", left).attr("y", 10).attr("class", "label-strong").style("font-family", "var(--display)").style("font-size", "22px").style("text-transform", "uppercase").text(n);
+      for (const t of [0.5, 1]) g.append("line").attr("x1", left).attr("x2", w - right).attr("y1", y(t)).attr("y2", y(t)).attr("stroke", "#23232f");
+      g.append("text").attr("class", "label").attr("x", left - 6).attr("y", y(1)).attr("dy", "0.35em").attr("text-anchor", "end").text("100%");
+      g.append("text").attr("class", "label").attr("x", left - 6).attr("y", y(0.5)).attr("dy", "0.35em").attr("text-anchor", "end").text("50%");
+      g.append("g").selectAll("rect").data(rows).join("rect")
+        .attr("x", (r) => x(r[0])).attr("width", x.bandwidth()).attr("y", (r) => y(r[2] / r[1])).attr("height", (r) => y(0) - y(r[2] / r[1]))
+        .attr("rx", 2).attr("fill", tone[n]).attr("fill-opacity", 0.75)
+        .on("pointermove", (event, r) => tip.show(event, `${n} · ${r[0]}s`, [`${pct(r[2] / r[1])} of state-years at war (${fmt(r[2])} of ${fmt(r[1])})`,
+          ...groups.map((gg, k) => (r[3 + k] ? `${gg}: ${fmt(r[3 + k])} begun` : null)).filter(Boolean)]))
+        .on("pointerleave", () => tip.hide());
+      const line = (pick) => d3.line().x((r) => x(r[0]) + x.bandwidth() / 2).y((r) => y2(pick(r))).curve(d3.curveMonotoneX);
+      g.append("path").datum(rows).attr("fill", "none").attr("stroke", "#e8e8ee").attr("stroke-width", 1.6).attr("d", line((r) => r[3] + r[5] + r[6]));
+      g.append("path").datum(rows).attr("fill", "none").attr("stroke", "#e8e8ee").attr("stroke-width", 1.2).attr("stroke-dasharray", "2 3").attr("d", line((r) => r[4]));
+      g.append("text").attr("class", "label").attr("x", w - right + 6).attr("y", y2(maxBegun)).attr("dy", "0.35em").text(fmt(maxBegun));
+      g.append("text").attr("class", "label").attr("x", w - right + 6).attr("y", y2(0)).attr("dy", "0.35em").text("0 wars");
+      if (i === names.length - 1) {
+        g.append("g").attr("class", "axis").attr("transform", `translate(0,${rowH + 4})`)
+          .call(d3.axisBottom(d3.scaleLinear([x.domain()[0], x.domain()[x.domain().length - 1] + 10], [left, w - right])).ticks(Math.min(10, w / 90)).tickFormat(d3.format("d")).tickSizeOuter(0))
+          .call((a) => a.attr("font-family", null).attr("font-size", null).select(".domain").remove());
+      }
+    });
+  }
+
+  /* 2. Barcode ----------------------------------------------------------- */
+  let barcodeSort = "first";
+  function barcode(data) {
+    const stage = $("barcode-stage"), canvas = $("barcode-canvas"), tip = tooltip(stage);
+    const states = data.states.filter((s) => s.w > 0);
+    $("bc-n").textContent = fmt(states.length);
+    const top = [...states].sort((a, b) => b.w - a.w)[0];
+    $("bc-top").textContent = `${top.n}, with ${fmt(top.w)} years`;
+    const order = barcodeSort === "first"
+      ? [...states].sort((a, b) => a.f - b.f || b.w - a.w)
+      : [...states].sort((a, b) => b.w - a.w || a.f - b.f);
+    const { start_year: y0, end_year: y1 } = data.meta;
+    const w = stage.clientWidth, row = w < 600 ? 1.6 : 2, axisH = 22, labelW = w < 700 ? 0 : 150;
+    const h = order.length * row + axisH;
+    const ctx = canvasFor(canvas, w, h);
+    const x = d3.scaleLinear([y0, y1 + 1], [0, w - labelW]);
+    ctx.font = '11px "JetBrains Mono", monospace';
+    ctx.textBaseline = "top";
+    for (let y = Math.ceil(y0 / 50) * 50; y <= y1; y += 50) {
+      ctx.fillStyle = "#1c1c26";
+      ctx.fillRect(x(y), axisH - 6, 1, h - axisH + 6);
+      ctx.fillStyle = "#6e6e80";
+      ctx.fillText(String(y), x(y) + 3, 2);
+    }
+    order.forEach((s, i) => {
+      const yy = axisH + i * row;
+      const b = Math.max(y0, s.b ?? y0), d = Math.min(y1, s.d ?? y1);
+      if (d >= b) { ctx.fillStyle = "#23232f"; ctx.fillRect(x(b), yy, x(d + 1) - x(b), Math.max(1, row - 0.6)); }
+      for (const [a, z, n] of s.runs) {
+        ctx.fillStyle = n >= 3 ? "#ff8a9c" : n === 2 ? "#e94560" : "#a8304a";
+        ctx.fillRect(x(a), yy, Math.max(1, x(z + 1) - x(a)), Math.max(1, row - 0.6));
+      }
+    });
+    if (labelW) {
+      const labelled = order.map((s, i) => ({ s, i })).filter(({ s }) => s.w >= d3.quantile(states.map((q) => q.w).sort(d3.ascending), 0.97));
+      ctx.font = '12px "Inter", sans-serif';
+      ctx.textBaseline = "middle";
+      let last = -Infinity;
+      for (const { s, i } of labelled) {
+        const yy = axisH + i * row;
+        if (yy - last < 13) continue;
+        last = yy;
+        ctx.fillStyle = "#e8e8ee";
+        ctx.fillText(s.n, w - labelW + 10, yy + row / 2);
+        ctx.fillStyle = "#e94560";
+        ctx.fillRect(w - labelW + 2, yy, 5, Math.max(1, row));
+      }
+    }
+    canvas.onpointermove = (event) => {
+      const r = canvas.getBoundingClientRect();
+      const i = Math.floor((event.clientY - r.top - axisH) / row);
+      const s = order[i];
+      if (!s) return tip.hide();
+      const year = Math.floor(x.invert(event.clientX - r.left));
+      const run = s.runs.find(([a, z]) => year >= a && year <= z);
+      tip.show(event, s.n, [`${fmt(s.w)} years at war`, `first war ${s.f}`,
+        year >= y0 && year <= y1 ? `${year}: ${run ? `at war (${run[2]} conflict${run[2] > 1 ? "s" : ""})` : "no war recorded"}` : ""]);
+    };
+    canvas.onpointerleave = () => tip.hide();
+    for (const b of document.querySelectorAll("[data-sort]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.sort === barcodeSort));
+      b.onclick = () => { barcodeSort = b.dataset.sort; barcode(data); };
+    }
+  }
+
+  /* 2b. The long peace ---------------------------------------------------- */
+  function peace(data) {
+    const stage = $("peace-stage"), tip = tooltip(stage);
+    const { start_year: y0, end_year: y1 } = data.meta;
+    const rows = [];
+    for (const s of data.states) {
+      if (!s.runs.length) continue;
+      const end = Math.min(y1, s.d ?? y1);
+      const gaps = [];
+      for (let i = 1; i < s.runs.length; i += 1) gaps.push([s.runs[i - 1][1] + 1, s.runs[i][0] - 1, false]);
+      const last = s.runs[s.runs.length - 1][1];
+      if (end > last) gaps.push([last + 1, end, s.d == null || s.d >= y1]);
+      const best = gaps.filter(([a, b]) => b >= a).sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]))[0];
+      if (best) rows.push({ s, a: best[0], b: best[1], open: best[2], len: best[1] - best[0] + 1 });
+    }
+    rows.sort((p, q) => q.len - p.len || p.a - q.a);
+    const top = rows.slice(0, 20).sort((p, q) => p.a - q.a);
+    const t0 = rows[0];
+    $("pc-top").textContent = `${t0.s.n} holds the record: ${fmt(t0.len)} years, ${t0.a}–${t0.b}${t0.open ? " and counting" : ""}`;
+    const w = stage.clientWidth, bar = 16, gap = 8, labelW = w < 640 ? 0 : 190, h = top.length * (bar + gap) + 30;
+    stage.replaceChildren();
+    const svg = d3.select(stage).append("svg").attr("viewBox", `0 0 ${w} ${h}`).attr("width", "100%");
+    const x = d3.scaleLinear([y0, y1 + 1], [labelW, w - 8]);
+    const g = svg.append("g").selectAll("g").data(top).join("g").attr("transform", (_, i) => `translate(0,${i * (bar + gap)})`);
+    g.append("rect").attr("x", (r) => x(Math.max(y0, r.s.b ?? y0))).attr("width", (r) => Math.max(0, x(Math.min(y1, r.s.d ?? y1) + 1) - x(Math.max(y0, r.s.b ?? y0)))).attr("height", bar).attr("fill", "#17171f");
+    g.append("rect").attr("x", (r) => x(r.a)).attr("width", (r) => x(r.b + 1) - x(r.a)).attr("height", bar).attr("rx", 3)
+      .attr("fill", "#1aa898").attr("fill-opacity", (r) => (r.open ? 1 : 0.7));
+    g.append("text").attr("class", "label-strong").attr("x", (r) => (labelW ? labelW - 8 : x(r.a) + 6)).attr("y", bar / 2).attr("dy", "0.35em")
+      .attr("text-anchor", labelW ? "end" : "start").style("fill", (r) => (labelW ? "#e8e8ee" : "#0a0a0f")).text((r) => r.s.n);
+    g.append("text").attr("class", "label").attr("x", (r) => (r.open ? x(r.a) - 6 : x(r.b + 1) + 6)).attr("y", bar / 2).attr("dy", "0.35em")
+      .attr("text-anchor", (r) => (r.open ? "end" : "start")).style("fill", "#e8e8ee").text((r) => `${r.len} yrs`);
+    g.append("rect").attr("x", 0).attr("width", w).attr("height", bar + gap).attr("fill", "transparent")
+      .on("pointermove", (event, r) => tip.show(event, r.s.n, [`No war ${r.a}–${r.b}${r.open ? ", still unbroken" : ""}`, `${fmt(r.len)} years`, `${fmt(r.s.w)} years at war in total`]))
+      .on("pointerleave", () => tip.hide());
+    svg.append("g").attr("class", "axis").attr("transform", `translate(0,${top.length * (bar + gap) + 2})`)
+      .call(d3.axisBottom(x).ticks(Math.min(10, (w - labelW) / 80)).tickFormat(d3.format("d")).tickSizeOuter(0))
+      .call((a) => a.attr("font-family", null).attr("font-size", null).select(".domain").remove());
+  }
+
+  /* 2c. Durations beeswarm ------------------------------------------------ */
+  function durations(data) {
+    const stage = $("durations-stage"), tip = tooltip(stage);
+    const groups = data.meta.groups;
+    const items = data.conflicts.filter((c) => c.g !== 4).map((c) => ({ ...c, len: c.e - c.s + 1 }));
+    const median = d3.median(items, (c) => c.len);
+    const longest = items.reduce((a, b) => (b.len > a.len ? b : a));
+    $("du-median").textContent = median <= 1 ? "a year" : `${Math.round(median)} years`;
+    $("du-longest").textContent = longest.n;
+    $("du-longest-n").textContent = fmt(longest.len);
+    $("durations-legend").replaceChildren(...groups.slice(0, 4).map((g, i) => { const s = document.createElement("span"); const sw = document.createElement("i"); sw.style.background = sw.style.color = COLORS[i]; s.append(sw, document.createTextNode(g)); return s; }));
+    const w = stage.clientWidth, h = Math.max(280, Math.min(420, w * 0.42));
+    stage.replaceChildren();
+    const svg = d3.select(stage).append("svg").attr("viewBox", `0 0 ${w} ${h}`).attr("width", "100%");
+    const x = d3.scaleLog([1, d3.max(items, (c) => c.len)], [16, w - 16]);
+    const rad = (c) => 2.2 + Math.sqrt(c.k) * 1.1;
+    const sim = d3.forceSimulation(items).force("x", d3.forceX((c) => x(c.len)).strength(1)).force("y", d3.forceY(h / 2 - 14).strength(0.08))
+      .force("collide", d3.forceCollide((c) => rad(c) + 0.9).iterations(3)).stop();
+    for (let i = 0; i < 180; i += 1) sim.tick();
+    const ticks = [1, 2, 3, 5, 10, 20, 50, 100, 200].filter((t) => t <= x.domain()[1]);
+    svg.append("g").selectAll("line").data(ticks).join("line").attr("x1", (t) => x(t)).attr("x2", (t) => x(t)).attr("y1", 10).attr("y2", h - 28).attr("stroke", "#23232f");
+    svg.append("g").selectAll("text").data(ticks).join("text").attr("class", "label").attr("x", (t) => x(t)).attr("y", h - 10).attr("text-anchor", "middle").text((t) => `${t} yr${t > 1 ? "s" : ""}`);
+    svg.append("line").attr("x1", x(median)).attr("x2", x(median)).attr("y1", 6).attr("y2", h - 28).attr("stroke", "#e8e8ee").attr("stroke-dasharray", "4 3");
+    svg.append("text").attr("class", "label-strong").attr("x", x(median) + 6).attr("y", 16).text(`median ${median <= 1 ? "1 year" : `${Math.round(median)} years`}`);
+    svg.append("g").selectAll("circle").data(items).join("circle")
+      .attr("cx", (c) => Math.max(8, Math.min(w - 8, c.x))).attr("cy", (c) => Math.max(8, Math.min(h - 34, c.y))).attr("r", rad)
+      .attr("fill", (c) => COLORS[c.g]).attr("fill-opacity", (c) => (c.x ? 0.08 : 0.85)).attr("stroke", (c) => COLORS[c.g]).attr("stroke-width", (c) => (c.x ? 1.2 : 0))
+      .on("pointermove", (event, c) => tip.show(event, c.n, [`${c.s}–${c.e}${c.x ? " (end estimated)" : ""} · ${fmt(c.len)} year${c.len > 1 ? "s" : ""}`, groups[c.g], `${fmt(c.k)} state${c.k === 1 ? "" : "s"}`]))
+      .on("pointerleave", () => tip.hide());
+    const named = [...items].sort((a, b) => b.len - a.len).slice(0, 4);
+    svg.append("g").selectAll("text").data(named).join("text").attr("class", "label-strong").attr("x", (c) => Math.min(w - 8, c.x)).attr("y", (c) => c.y - rad(c) - 5)
+      .attr("text-anchor", "end").text((c) => c.n);
+  }
+
+  /* 3. Rivers (streamgraph) ---------------------------------------------- */
+  function rivers(data) {
+    const stage = $("rivers-stage"), tip = tooltip(stage);
+    const groups = data.meta.groups;
+    const rows = data.stream.map(([year, ...v]) => Object.assign({ year }, Object.fromEntries(groups.map((g, i) => [g, v[i]]))));
+    const totals = rows.map((r) => ({ year: r.year, total: d3.sum(groups, (g) => r[g]) }));
+    const peak = totals.reduce((a, b) => (b.total > a.total ? b : a));
+    $("rv-peak").textContent = `${fmt(peak.total)} participations`;
+    $("rv-year").textContent = peak.year;
+    const w = stage.clientWidth, h = Math.max(300, Math.min(520, w * 0.45));
+    stage.replaceChildren();
+    const svg = d3.select(stage).append("svg").attr("viewBox", `0 0 ${w} ${h}`).attr("width", "100%");
+    const defs = svg.append("defs");
+    defs.append("filter").attr("id", "glow").attr("x", "-20%").attr("y", "-20%").attr("width", "140%").attr("height", "140%")
+      .call((f) => { f.append("feGaussianBlur").attr("stdDeviation", 4).attr("result", "b"); const m = f.append("feMerge"); m.append("feMergeNode").attr("in", "b"); m.append("feMergeNode").attr("in", "SourceGraphic"); });
+    const stack = d3.stack().keys(groups).offset(d3.stackOffsetWiggle).order(d3.stackOrderInsideOut)(rows);
+    const x = d3.scaleLinear(d3.extent(rows, (r) => r.year), [0, w]);
+    const y = d3.scaleLinear([d3.min(stack, (s) => d3.min(s, (p) => p[0])), d3.max(stack, (s) => d3.max(s, (p) => p[1]))], [h - 26, 6]);
+    const area = d3.area().x((p) => x(p.data.year)).y0((p) => y(p[0])).y1((p) => y(p[1])).curve(d3.curveMonotoneX);
+    svg.append("g").selectAll("path").data(stack).join("path")
+      .attr("d", area).attr("fill", (s) => COLORS[groups.indexOf(s.key)]).attr("fill-opacity", 0.9)
+      .attr("stroke", "#0a0a0f").attr("stroke-width", 0.6).attr("filter", "url(#glow)");
+    svg.append("g").attr("class", "axis").attr("transform", `translate(0,${h - 22})`)
+      .call(d3.axisBottom(x).ticks(Math.min(14, w / 80)).tickFormat(d3.format("d")).tickSizeOuter(0))
+      .call((g) => g.attr("font-family", null).attr("font-size", null).select(".domain").remove());
+    const peakY = y(d3.max(stack, (s) => s.find((p) => p.data.year === peak.year)[1]));
+    svg.append("line").attr("x1", x(peak.year)).attr("x2", x(peak.year)).attr("y1", peakY - 4).attr("y2", Math.max(14, peakY - 40)).attr("stroke", "#e8e8ee").attr("stroke-width", 1);
+    svg.append("text").attr("class", "label-strong").attr("x", x(peak.year)).attr("y", Math.max(10, peakY - 46)).attr("text-anchor", x(peak.year) > w * 0.8 ? "end" : "middle").text(`${peak.year}: ${fmt(peak.total)}`);
+    const rule = svg.append("line").attr("y1", 0).attr("y2", h - 22).attr("stroke", "#e8e8ee").attr("stroke-opacity", 0.4).attr("visibility", "hidden");
+    svg.append("rect").attr("width", w).attr("height", h - 22).attr("fill", "transparent")
+      .on("pointermove", (event) => {
+        const year = Math.round(x.invert(d3.pointer(event)[0]));
+        const r = rows.find((q) => q.year === year);
+        if (!r) return;
+        rule.attr("x1", x(year)).attr("x2", x(year)).attr("visibility", "visible");
+        tip.show(event, `${year} · ${fmt(d3.sum(groups, (g) => r[g]))} participations`, groups.filter((g) => r[g] > 0).map((g) => `${g}: ${fmt(r[g])}`));
+      })
+      .on("pointerleave", () => { rule.attr("visibility", "hidden"); tip.hide(); });
+  }
+
+  /* 4. Constellations ---------------------------------------------------- */
+  function constellations(data) {
+    const twin = $("twin");
+    twin.replaceChildren();
+    const nets = Object.entries(data.networks);
+    const counts = nets.map(([, n]) => n.links.length);
+    $("ww-ratio").textContent = counts.length === 2 && counts[0] ? `${(counts[1] / counts[0]).toFixed(1)} times` : "—";
+    for (const [title, net] of nets) {
+      const fig = document.createElement("figure");
+      const cap = document.createElement("figcaption");
+      cap.append(document.createTextNode(title));
+      const sides = [...new Set(net.nodes.map((n) => n.side))].sort((a, b) => (/allies/i.test(b) ? 1 : 0) - (/allies/i.test(a) ? 1 : 0));
+      const sub = document.createElement("span");
+      sub.textContent = `${fmt(net.nodes.length)} states · ${fmt(net.links.length)} opposing pairs`;
+      cap.append(sub);
+      fig.append(cap);
+      const legend = document.createElement("div");
+      legend.className = "legend";
+      sides.forEach((s, i) => {
+        const el = document.createElement("span");
+        const sw = document.createElement("i");
+        sw.style.background = sw.style.color = sideColor(s, i);
+        el.append(sw, document.createTextNode(s));
+        legend.append(el);
+      });
+      fig.append(legend);
+      const stage = document.createElement("div");
+      stage.className = "stage";
+      stage.style.marginTop = "8px";
+      fig.append(stage);
+      twin.append(fig);
+      drawNet(stage, net, sides);
+    }
+    function sideColor(side, i) { return /;/.test(side) ? "#9898a8" : /allies/i.test(side) ? "#3d86ea" : i === 0 ? "#3d86ea" : "#e94560"; }
+    function drawNet(stage, net, sides) {
+      const tip = tooltip(stage);
+      const w = Math.max(280, stage.clientWidth), h = Math.round(w * 0.8);
+      const nodes = net.nodes.map((n) => ({ ...n, deg: 0 }));
+      const byId = new Map(nodes.map((n) => [n.id, n]));
+      const links = net.links.map(([a, b]) => ({ source: a, target: b }));
+      for (const l of links) { byId.get(l.source).deg += 1; byId.get(l.target).deg += 1; }
+      const sim = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id((n) => n.id).distance(w * 0.32).strength(0.03))
+        .force("charge", d3.forceManyBody().strength(-w * 0.18))
+        .force("x", d3.forceX((n) => (sides.indexOf(n.side) <= 0 ? w * 0.3 : w * 0.7)).strength(0.18))
+        .force("y", d3.forceY(h / 2).strength(0.12))
+        .force("collide", d3.forceCollide((n) => 8 + Math.sqrt(n.deg) * 1.8))
+        .stop();
+      for (let i = 0; i < 320; i += 1) sim.tick();
+      const rad = (n) => 3 + Math.sqrt(n.deg) * 1.3;
+      for (const n of nodes) { n.x = Math.max(rad(n) + 4, Math.min(w - rad(n) - 4, n.x)); n.y = Math.max(rad(n) + 16, Math.min(h - rad(n) - 4, n.y)); }
+      const svg = d3.select(stage).append("svg").attr("viewBox", `0 0 ${w} ${h}`).attr("width", "100%");
+      const id = `g${Math.random().toString(36).slice(2, 8)}`;
+      svg.append("defs").append("filter").attr("id", id).attr("x", "-50%").attr("y", "-50%").attr("width", "200%").attr("height", "200%")
+        .call((f) => { f.append("feGaussianBlur").attr("stdDeviation", 3).attr("result", "b"); const m = f.append("feMerge"); m.append("feMergeNode").attr("in", "b"); m.append("feMergeNode").attr("in", "SourceGraphic"); });
+      const link = svg.append("g").selectAll("line").data(links).join("line")
+        .attr("x1", (l) => l.source.x).attr("y1", (l) => l.source.y).attr("x2", (l) => l.target.x).attr("y2", (l) => l.target.y)
+        .attr("stroke", "#e8e8ee").attr("stroke-opacity", 0.09).attr("stroke-width", 0.8);
+      const node = svg.append("g").selectAll("circle").data(nodes).join("circle")
+        .attr("cx", (n) => n.x).attr("cy", (n) => n.y).attr("r", rad)
+        .attr("fill", (n) => sideColor(n.side, sides.indexOf(n.side))).attr("filter", `url(#${id})`);
+      const big = new Set([...nodes].sort((a, b) => b.deg - a.deg).slice(0, 7).map((n) => n.id));
+      svg.append("g").selectAll("text").data(nodes.filter((n) => big.has(n.id))).join("text")
+        .attr("class", "label-strong").attr("x", (n) => n.x).attr("y", (n) => n.y - rad(n) - 6).attr("text-anchor", "middle").text((n) => n.id);
+      node.on("pointermove", (event, n) => {
+        const mine = links.filter((l) => l.source === n || l.target === n);
+        link.attr("stroke-opacity", (l) => (mine.includes(l) ? 0.75 : 0.03)).attr("stroke", (l) => (mine.includes(l) ? sideColor(n.side, sides.indexOf(n.side)) : "#e8e8ee"));
+        tip.show(event, n.id, [n.side, `${fmt(n.deg)} opposing states`]);
+      }).on("pointerleave", () => { link.attr("stroke-opacity", 0.09).attr("stroke", "#e8e8ee"); tip.hide(); });
+    }
+  }
+
+  /* 5. Chord ------------------------------------------------------------- */
+  function chord(data) {
+    const stage = $("chord-stage"), tip = tooltip(stage);
+    const { names, matrix } = data.chord;
+    $("ch-n").textContent = names.length;
+    let best = [0, 1, 0];
+    matrix.forEach((row, i) => row.forEach((v, j) => { if (j > i && v > best[2]) best = [i, j, v]; }));
+    $("ch-top").textContent = `${names[best[0]]} and ${names[best[1]]}, with ${fmt(best[2])} conflicts in common`;
+    const w = Math.min(stage.clientWidth, 820), h = w;
+    const outer = w / 2 - (w < 560 ? 70 : 120), inner = outer - 14;
+    stage.replaceChildren();
+    const svg = d3.select(stage).append("svg").attr("viewBox", `${-w / 2} ${-h / 2} ${w} ${h}`).attr("width", "100%").style("max-width", `${w}px`).style("margin", "0 auto");
+    const chords = d3.chord().padAngle(0.035).sortSubgroups(d3.descending)(matrix);
+    const ramp = d3.scaleSequential([0, names.length - 1], d3.interpolateRgb("#e94560", "#ffb3a8"));
+    const ribbons = svg.append("g").selectAll("path").data(chords).join("path")
+      .attr("d", d3.ribbon().radius(inner)).attr("fill", (c) => ramp(c.source.index)).attr("fill-opacity", 0.32)
+      .attr("stroke", "#0a0a0f").attr("stroke-width", 0.5);
+    const group = svg.append("g").selectAll("g").data(chords.groups).join("g");
+    group.append("path").attr("d", d3.arc().innerRadius(inner + 2).outerRadius(outer)).attr("fill", (g) => ramp(g.index));
+    group.append("text")
+      .each(function (g) { g.angle = (g.startAngle + g.endAngle) / 2; })
+      .attr("transform", (g) => `rotate(${(g.angle * 180) / Math.PI - 90}) translate(${outer + 8}) ${g.angle > Math.PI ? "rotate(180)" : ""}`)
+      .attr("text-anchor", (g) => (g.angle > Math.PI ? "end" : "start")).attr("dy", "0.35em")
+      .attr("class", "label-strong").style("font-size", w < 560 ? "10px" : "12px").text((g) => names[g.index]);
+    const focus = (i) => ribbons.attr("fill-opacity", (c) => (i == null ? 0.32 : c.source.index === i || c.target.index === i ? 0.85 : 0.04));
+    group.on("pointermove", (event, g) => {
+      focus(g.index);
+      const partners = matrix[g.index].map((v, j) => [names[j], v]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      tip.show(event, names[g.index], partners.map(([n, v]) => `${n}: ${fmt(v)} conflicts`));
+    }).on("pointerleave", () => { focus(null); tip.hide(); });
+    ribbons.on("pointermove", (event, c) => {
+      tip.show(event, `${names[c.source.index]} · ${names[c.target.index]}`, [`${fmt(matrix[c.source.index][c.target.index])} conflicts together`]);
+    }).on("pointerleave", () => tip.hide());
+  }
+
+  /* 6. Circle packing ---------------------------------------------------- */
+  function pack(data) {
+    const stage = $("pack-stage"), tip = tooltip(stage);
+    const byRoot = d3.group(data.conflicts.filter((c) => c.r), (c) => c.r);
+    const byQ = new Map(data.conflicts.map((c) => [c.q, c]));
+    const roots = [...byRoot].filter(([, kids]) => kids.length >= 2).map(([q, kids]) => {
+      const self = byQ.get(q);
+      return {
+        name: self ? self.n : q, root: self, g: self ? self.g : 0,
+        children: [...(self ? [{ name: `${self.n} (itself)`, value: self.k, g: self.g, c: self, own: true }] : []),
+          ...kids.map((c) => ({ name: c.n, value: c.k, g: c.g, c }))],
+      };
+    });
+    const topRoot = [...roots].sort((a, b) => b.children.length - a.children.length)[0];
+    $("ns-top").textContent = topRoot ? `${topRoot.name}, with ${topRoot.children.length - 1} parts,` : "—";
+    const w = stage.clientWidth, h = Math.max(380, Math.min(760, w * 0.72));
+    stage.replaceChildren();
+    const hier = d3.hierarchy({ children: roots }).sum((d) => d.value || 0).sort((a, b) => b.value - a.value);
+    d3.pack().size([w, h]).padding((d) => (d.depth === 0 ? 10 : 2))(hier);
+    const svg = d3.select(stage).append("svg").attr("viewBox", `0 0 ${w} ${h}`).attr("width", "100%");
+    const nodes = hier.descendants().filter((d) => d.depth > 0);
+    svg.append("g").selectAll("circle").data(nodes).join("circle")
+      .attr("cx", (d) => d.x).attr("cy", (d) => d.y).attr("r", (d) => d.r)
+      .attr("fill", (d) => (d.depth === 1 ? "rgba(255,255,255,0.025)" : COLORS[d.data.g]))
+      .attr("fill-opacity", (d) => (d.depth === 1 ? 1 : d.data.own ? 0.35 : 0.8))
+      .attr("stroke", (d) => (d.depth === 1 ? "#3a3a4c" : "#0a0a0f")).attr("stroke-width", (d) => (d.depth === 1 ? 1 : 0.6))
+      .on("pointermove", (event, d) => {
+        const c = d.depth === 1 ? d.data.root : d.data.c;
+        if (d.depth === 1) return tip.show(event, d.data.name, [`${d.children.length - (d.data.root ? 1 : 0)} parts`, c ? `${c.s}–${c.e}` : ""]);
+        tip.show(event, d.data.name, [`${c.s}–${c.e}`, `${fmt(c.k)} states`, d.parent ? `part of ${d.parent.data.name}` : ""]);
+      })
+      .on("pointerleave", () => tip.hide());
+    svg.append("g").selectAll("text").data(nodes.filter((d) => d.depth === 1 && d.r > 46)).join("text")
+      .attr("class", "label-strong").attr("x", (d) => d.x).attr("y", (d) => d.y - d.r + 16).attr("text-anchor", "middle")
+      .style("pointer-events", "none").text((d) => (d.data.name.length > d.r / 4 ? d.data.name.slice(0, Math.floor(d.r / 4)) + "…" : d.data.name));
+  }
+
+  /* 7. War clock --------------------------------------------------------- */
+  function clock(data) {
+    const months = data.months;
+    const section = $("clock");
+    if (!months || d3.sum(months.start) === 0) { section.hidden = true; return; }
+    section.hidden = false;
+    const stage = $("clock-stage"), tip = tooltip(stage);
+    const NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const topM = d3.maxIndex(months.start);
+    $("ck-top").textContent = NAMES[topM];
+    const w = Math.min(stage.clientWidth, 640), h = w, r0 = w * 0.16, r1 = w / 2 - 40;
+    stage.replaceChildren();
+    const svg = d3.select(stage).append("svg").attr("viewBox", `${-w / 2} ${-h / 2} ${w} ${h}`).attr("width", "100%").style("max-width", `${w}px`).style("margin", "0 auto");
+    const max = d3.max([...months.start, ...months.end]);
+    const r = d3.scaleRadial([0, max], [r0, r1]);
+    const slice = (2 * Math.PI) / 12;
+    for (let m = 0; m < 12; m += 1) {
+      const a = m * slice;
+      svg.append("path").attr("d", d3.arc()({ innerRadius: r0, outerRadius: r(months.start[m]), startAngle: a + 0.02, endAngle: a + slice / 2 - 0.01 }))
+        .attr("fill", "#e94560").attr("fill-opacity", 0.9)
+        .on("pointermove", (event) => tip.show(event, NAMES[m], [`${fmt(months.start[m])} wars started`, `${fmt(months.end[m])} ended`])).on("pointerleave", () => tip.hide());
+      svg.append("path").attr("d", d3.arc()({ innerRadius: r0, outerRadius: r(months.end[m]), startAngle: a + slice / 2 + 0.01, endAngle: a + slice - 0.02 }))
+        .attr("fill", "#3d86ea").attr("fill-opacity", 0.9)
+        .on("pointermove", (event) => tip.show(event, NAMES[m], [`${fmt(months.start[m])} wars started`, `${fmt(months.end[m])} ended`])).on("pointerleave", () => tip.hide());
+      const la = a + slice / 2 - Math.PI / 2;
+      svg.append("text").attr("class", "label").attr("x", (r1 + 18) * Math.cos(la)).attr("y", (r1 + 18) * Math.sin(la))
+        .attr("text-anchor", "middle").attr("dy", "0.35em").text(NAMES[m].slice(0, 3));
+    }
+    svg.append("circle").attr("r", r0 - 4).attr("fill", "none").attr("stroke", "#23232f");
+    svg.append("text").attr("class", "label").attr("text-anchor", "middle").attr("dy", "-0.4em").text(`${fmt(d3.sum(months.start))} starts`);
+    svg.append("text").attr("class", "label").attr("text-anchor", "middle").attr("dy", "1em").text(`${fmt(d3.sum(months.end))} ends`);
+  }
+})();
+</script>
+</body>
+</html>
